@@ -4,6 +4,11 @@ All notable changes to the VS Code extension are documented here.
 The Visual Studio extension has its own [changelog](../CHANGELOG.md).
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-11-12
+
+### Fixed
+- **Single sign-on showed no sign-in window** and failed with `could not read Username … terminal prompts disabled` when the first `git` on PATH had no credential helper configured. On Windows, single sign-on now always uses Git Credential Manager and prefers Git for Windows over other copies of git. If it still can't prompt, the error names the git that was used and explains what to install.
+
 ## [1.1.0] - 2026-11-12
 
 Matches Visual Studio edition 1.1.0.

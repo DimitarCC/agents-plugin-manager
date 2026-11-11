@@ -3,6 +3,11 @@
 All notable changes to Agent Plugin Manager are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-11-12
+
+### Fixed
+- **Single sign-on showed no sign-in window** and failed with `could not read Username … terminal prompts disabled` when the first `git` on PATH had no credential helper configured (for example a git bundled with another tool). Single sign-on now always uses Git Credential Manager, and prefers Git for Windows over other copies of git. If it still can't prompt, the error names the git that was used and explains what to install.
+
 ## [1.1.0] - 2026-11-12
 
 ### Added
@@ -35,5 +40,6 @@ First public release.
 - **Theming:** WinUI-style interface that follows the Visual Studio theme (light, dark, blue, high contrast).
 - Extension icon, preview image and Tools menu icon.
 
+[1.1.1]: https://github.com/DimitarCC/agents-plugin-manager/releases/tag/v1.1.1
 [1.1.0]: https://github.com/DimitarCC/agents-plugin-manager/releases/tag/v1.1.0
 [1.0.2]: https://github.com/DimitarCC/agents-plugin-manager/releases/tag/v1.0.2

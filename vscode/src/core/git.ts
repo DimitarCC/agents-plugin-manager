@@ -111,12 +111,23 @@ class GitRunner {
     env.GIT_TERMINAL_PROMPT = '0';
     env.GCM_INTERACTIVE = this.ctx.interactive && this.source.auth === 'sso' ? 'true' : 'false';
 
+    // Extra git configuration is passed through the environment, so secrets never appear in a command line or log.
+    const cfg: Array<[string, string]> = [];
     if (this.ctx.authHeader && this.uri) {
-      env.GIT_CONFIG_COUNT = '2';
-      env.GIT_CONFIG_KEY_0 = `http.${this.uri.origin}/.extraheader`;
-      env.GIT_CONFIG_VALUE_0 = this.ctx.authHeader;
-      env.GIT_CONFIG_KEY_1 = 'credential.helper';
-      env.GIT_CONFIG_VALUE_1 = '';
+      cfg.push([`http.${this.uri.origin}/.extraheader`, this.ctx.authHeader]);
+      cfg.push(['credential.helper', '']);   // never fall back to a stored credential
+    } else if (this.source.auth === 'sso' && process.platform === 'win32') {
+      // Always go through Git Credential Manager. The git found first on PATH can have no credential helper configured
+      // at all; git then fails with "could not read Username ... terminal prompts disabled" and nothing is shown.
+      // An empty value first resets any other helpers.
+      cfg.push(['credential.helper', ''], ['credential.helper', 'manager']);
+    }
+    if (cfg.length > 0) {
+      env.GIT_CONFIG_COUNT = String(cfg.length);
+      cfg.forEach(([k, v], i) => {
+        env[`GIT_CONFIG_KEY_${i}`] = k;
+        env[`GIT_CONFIG_VALUE_${i}`] = v;
+      });
     }
 
     return new Promise<void>((resolve, reject) => {
@@ -141,19 +152,23 @@ class GitRunner {
         } else if (code === 0) {
           resolve();
         } else {
-          reject(new GitError(friendly(err.trim())));
+          reject(new GitError(friendly(err.trim(), this.source)));
         }
       });
     });
   }
 }
 
-function friendly(text: string): string {
+function friendly(text: string, source: PluginSource): string {
   if (/SAML|SSO/i.test(text)) {
     return text + "\n\nThe organization enforces SSO: choose 'Single sign-on' or 'Sign in with VS Code', or authorize your token for the organization (GitHub: Settings › Tokens › Configure SSO).";
   }
   if (/Authentication failed|could not read Username|terminal prompts disabled/i.test(text)) {
-    return text + "\n\nAuthentication required. Use 'Single sign-on', 'Sign in with VS Code' or provide a personal access token.";
+    let hint = "\n\nAuthentication required. Use 'Single sign-on', 'Sign in with VS Code' or provide a personal access token.";
+    if (source.auth === 'sso') {
+      hint += `\nGit used: ${findGit()}\nIf no sign-in window appeared, Git Credential Manager may be missing from that git: install Git (Git for Windows includes Git Credential Manager) and try again.`;
+    }
+    return text + hint;
   }
   return text.length === 0 ? 'git failed.' : text;
 }
@@ -164,14 +179,15 @@ function findGit(): string {
     return cachedGit;
   }
   if (process.platform === 'win32') {
+    // Git for Windows first: it ships Git Credential Manager, which single sign-on needs. A git found earlier on PATH
+    // (bundled with another tool, MSYS2, ...) often has no credential helper.
     const candidates = [
       path.join(process.env['ProgramFiles'] ?? 'C:\\Program Files', 'Git', 'cmd', 'git.exe'),
       path.join(process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)', 'Git', 'cmd', 'git.exe'),
       path.join(process.env['LOCALAPPDATA'] ?? '', 'Programs', 'Git', 'cmd', 'git.exe'),
     ];
-    // Prefer git on PATH; these are fallbacks.
-    const onPath = (process.env['PATH'] ?? '').split(path.delimiter).map(d => path.join(d.trim(), 'git.exe')).find(exists);
-    cachedGit = onPath ?? candidates.find(exists) ?? 'git';
+    const onPath = (process.env['PATH'] ?? '').split(path.delimiter).filter(d => d.trim() !== '').map(d => path.join(d.trim(), 'git.exe')).find(exists);
+    cachedGit = candidates.find(exists) ?? onPath ?? 'git';
   } else {
     cachedGit = 'git';
   }

@@ -147,21 +147,36 @@ namespace AgentsPluginsPackageManager.Services
                 // Git Credential Manager may show its own GUI/browser window for SSO.
                 psi.EnvironmentVariables["GCM_INTERACTIVE"] = _interactive && _source.Auth == AuthMode.SingleSignOn ? "true" : "false";
 
+                // Extra git configuration is passed through the environment, so secrets never appear in a command line or log.
+                var cfg = new List<KeyValuePair<string, string>>();
                 if (_source.Auth == AuthMode.PersonalAccessToken && _uri != null)
                 {
                     var token = _source.GetToken();
                     if (!string.IsNullOrEmpty(token))
                     {
-                        // Token travels via environment config, so it never appears in a command line or log.
                         var host = _uri.Host.ToLowerInvariant();
                         var azure = host.EndsWith("dev.azure.com") || host.EndsWith(".visualstudio.com");
                         var user = azure ? "" : "x-access-token";
                         var basic = Convert.ToBase64String(Encoding.UTF8.GetBytes(user + ":" + token));
-                        psi.EnvironmentVariables["GIT_CONFIG_COUNT"] = "2";
-                        psi.EnvironmentVariables["GIT_CONFIG_KEY_0"] = "http." + _uri.GetLeftPart(UriPartial.Authority) + "/.extraheader";
-                        psi.EnvironmentVariables["GIT_CONFIG_VALUE_0"] = "Authorization: Basic " + basic;
-                        psi.EnvironmentVariables["GIT_CONFIG_KEY_1"] = "credential.helper";
-                        psi.EnvironmentVariables["GIT_CONFIG_VALUE_1"] = "";
+                        cfg.Add(new KeyValuePair<string, string>("http." + _uri.GetLeftPart(UriPartial.Authority) + "/.extraheader", "Authorization: Basic " + basic));
+                        cfg.Add(new KeyValuePair<string, string>("credential.helper", ""));   // never fall back to a stored credential
+                    }
+                }
+                else if (_source.Auth == AuthMode.SingleSignOn)
+                {
+                    // Always go through Git Credential Manager. The git found first on PATH can have no credential helper
+                    // configured at all; git then fails with "could not read Username ... terminal prompts disabled"
+                    // and nothing is shown. An empty value first resets any other helpers.
+                    cfg.Add(new KeyValuePair<string, string>("credential.helper", ""));
+                    cfg.Add(new KeyValuePair<string, string>("credential.helper", "manager"));
+                }
+                if (cfg.Count > 0)
+                {
+                    psi.EnvironmentVariables["GIT_CONFIG_COUNT"] = cfg.Count.ToString();
+                    for (int i = 0; i < cfg.Count; i++)
+                    {
+                        psi.EnvironmentVariables["GIT_CONFIG_KEY_" + i] = cfg[i].Key;
+                        psi.EnvironmentVariables["GIT_CONFIG_VALUE_" + i] = cfg[i].Value;
                     }
                 }
 
@@ -190,14 +205,19 @@ namespace AgentsPluginsPackageManager.Services
                 }
             }
 
-            private static string Friendly(string text)
+            private string Friendly(string text)
             {
                 if (text.IndexOf("SAML", StringComparison.OrdinalIgnoreCase) >= 0 || text.IndexOf("SSO", StringComparison.OrdinalIgnoreCase) >= 0)
                     return text + "\n\nThe organization enforces SSO: choose 'Single sign-on' authentication, or authorize your token for the organization (GitHub: Settings › Tokens › Configure SSO).";
                 if (text.IndexOf("Authentication failed", StringComparison.OrdinalIgnoreCase) >= 0
                     || text.IndexOf("could not read Username", StringComparison.OrdinalIgnoreCase) >= 0
                     || text.IndexOf("terminal prompts disabled", StringComparison.OrdinalIgnoreCase) >= 0)
-                    return text + "\n\nAuthentication required. Use 'Single sign-on' (Git Credential Manager) or provide a personal access token.";
+                {
+                    var hint = "\n\nAuthentication required. Use 'Single sign-on' (Git Credential Manager) or provide a personal access token.";
+                    if (_source.Auth == AuthMode.SingleSignOn)
+                        hint += "\nGit used: " + FindGit() + "\nIf no sign-in window appeared, Git Credential Manager may be missing from that git: install Git for Windows (it includes Git Credential Manager) and try again.";
+                    return text + hint;
+                }
                 return text.Length == 0 ? "git failed." : text;
             }
 
@@ -211,14 +231,19 @@ namespace AgentsPluginsPackageManager.Services
             private static string FindGit()
             {
                 if (_git != null) return _git;
-                var candidates = new List<string>();
+                // Git for Windows first: it ships Git Credential Manager, which single sign-on needs. A git found earlier on
+                // PATH (bundled with another tool, MSYS2, ...) often has no credential helper.
+                var candidates = new List<string>
+                {
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Git", "cmd", "git.exe"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Git", "cmd", "git.exe"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Git", "cmd", "git.exe"),
+                };
                 var path = Environment.GetEnvironmentVariable("PATH") ?? "";
                 foreach (var d in path.Split(Path.PathSeparator))
                 {
                     try { if (!string.IsNullOrWhiteSpace(d)) candidates.Add(Path.Combine(d.Trim(), "git.exe")); } catch { }
                 }
-                var pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-                candidates.Add(Path.Combine(pf, "Git", "cmd", "git.exe"));
                 try
                 {
                     var ide = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName);
