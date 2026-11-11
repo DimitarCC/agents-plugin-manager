@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
+  <Metadata>
+    <Identity Id="AgentsPluginsPackageManager.3b52e97e-b5bd-4b93-8e8d-2f1685f2d6ae" Version="1.0.2" Language="en-US" Publisher="Dimitar Tsenev" />
+    <DisplayName>Agent Plugin Manager</DisplayName>
+    <Description>Browse and install Agent Plugins (agent-plugins.org) — skills, agents, prompts and MCP servers — from public or SSO-protected enterprise repositories into your user folders or the current repository.</Description>
+    <MoreInfo>https://github.com/DimitarCC/agents-plugin-manager</MoreInfo>
+    <License>LICENSE.txt</License>
+    <ReleaseNotes>https://github.com/DimitarCC/agents-plugin-manager/blob/main/CHANGELOG.md</ReleaseNotes>
+    <Icon>Resources\icon.png</Icon>
+    <PreviewImage>Resources\preview.png</PreviewImage>
+    <Tags>agent, plugins, skills, mcp, copilot, claude</Tags>
+  </Metadata>
+  <Installation>
+    <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[18.0, )">
+      <ProductArchitecture>amd64</ProductArchitecture>
+    </InstallationTarget>
+    <InstallationTarget Id="Microsoft.VisualStudio.Pro" Version="[18.0, )">
+      <ProductArchitecture>amd64</ProductArchitecture>
+    </InstallationTarget>
+    <InstallationTarget Id="Microsoft.VisualStudio.Enterprise" Version="[18.0, )">
+      <ProductArchitecture>amd64</ProductArchitecture>
+    </InstallationTarget>
+  </Installation>
+  <Dependencies>
+    <Dependency Id="Microsoft.Framework.NDP" DisplayName="Microsoft .NET Framework" Version="[4.5,)" d:Source="Manual" />
+  </Dependencies>
+  <Prerequisites>
+    <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor" DisplayName="Visual Studio core editor" Version="[18.0, )" />
+  </Prerequisites>
+  <Assets>
+    <Asset Type="Microsoft.VisualStudio.VsPackage" Path="|%CurrentProject%;PkgdefProjectOutputGroup|" d:Source="Project" d:ProjectName="%CurrentProject%" />
+  </Assets>
+</PackageManifest>

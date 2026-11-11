@@ -1,0 +1,256 @@
+<UserControl x:Class="AgentsPluginsPackageManager.UI.PluginManagerControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             MinWidth="760" MinHeight="520"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <BooleanToVisibilityConverter x:Key="BoolToVis" />
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/AgentsPluginsPackageManager;component/UI/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Grid Margin="20,16,20,16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Title -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,14">
+            <TextBlock Text="Agent Plugin Manager" Style="{StaticResource Title}" />
+            <TextBlock Text="Browse agent-plugins.org packages and install the skills, agents, prompts and MCP servers you need."
+                       Style="{StaticResource Muted}" Margin="0,2,0,0" />
+        </StackPanel>
+
+        <!-- Source bar -->
+        <Border Grid.Row="1" Style="{StaticResource Panel}" Margin="0,0,0,12">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" MaxWidth="420" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="SOURCE" Style="{StaticResource SectionLabel}" VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <ComboBox x:Name="SourceCombo" Grid.Column="1" DisplayMemberPath="DisplayName"
+                              SelectionChanged="SourceCombo_SelectionChanged" Margin="0,0,12,0" />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                        <Button Content="Add source" Style="{StaticResource AccentButton}" Click="AddSource_Click" />
+                        <Button x:Name="EditButton" Content="Edit" Click="EditSource_Click" />
+                        <Button x:Name="RemoveButton" Content="Remove" Click="RemoveSource_Click" />
+                        <Button x:Name="RefreshButton" Content="Refresh" Click="Refresh_Click" Margin="0" />
+                    </StackPanel>
+                </Grid>
+                <Grid Grid.Row="1" Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <ProgressBar x:Name="Busy" IsIndeterminate="True" Visibility="Collapsed" Margin="0,0,0,6" />
+                        <TextBlock x:Name="StatusText" Style="{StaticResource Muted}" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="12,0,0,0">
+                        <CheckBox x:Name="AutoUpdateCheck" Content="Auto-update installed plugins" VerticalAlignment="Center" Margin="0,0,14,0"
+                                  Click="AutoUpdate_Click" ToolTip="Update installed packages automatically when a newer version is in the source (on refresh and at Visual Studio startup)" />
+                        <Button x:Name="UpdateAllButton" Style="{StaticResource AccentButton}" Content="Update all" Margin="0" Visibility="Collapsed" Click="UpdateAll_Click" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- Packages + details -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="320" MinWidth="220" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Package list -->
+            <Border Style="{StaticResource Panel}">
+                <DockPanel>
+                    <TextBox x:Name="SearchBox" DockPanel.Dock="Top" Margin="0,0,0,10" TextChanged="SearchBox_TextChanged" ToolTip="Filter packages by name, description, keyword or component" />
+                    <Grid DockPanel.Dock="Top" Margin="2,0,0,8">
+                        <CheckBox x:Name="SelectAllPackages" Click="SelectAllPackages_Click" Content="Select all packages" />
+                        <TextBlock x:Name="PackageCount" Style="{StaticResource Muted}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                    <ListBox x:Name="PackageList" SelectionChanged="PackageList_SelectionChanged">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" VerticalAlignment="Top" Margin="0,2,10,0"
+                                              ToolTip="Select every item of this package" />
+                                    <StackPanel Grid.Column="1">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Text="{Binding VersionLabel}" Style="{StaticResource Muted}" Margin="8,0,0,0" />
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        </DockPanel>
+                                        <TextBlock Text="{Binding ListDescription}" Style="{StaticResource Muted}" MaxHeight="36"
+                                                   TextTrimming="CharacterEllipsis" Margin="0,3,0,5" />
+                                        <TextBlock Text="{Binding Summary}" FontSize="11" Foreground="{DynamicResource Accent}" />
+                                        <TextBlock Text="{Binding InstalledSummary}" Style="{StaticResource Muted}" FontSize="11" Margin="0,4,0,0"
+                                                   Visibility="{Binding IsInstalled, Converter={StaticResource BoolToVis}}" />
+                                        <Border Style="{StaticResource TagChip}" HorizontalAlignment="Left" Margin="0,5,0,0" Padding="8,1"
+                                                Visibility="{Binding HasUpdate, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="{Binding UpdateText, StringFormat='Update: {0}'}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Accent}" />
+                                        </Border>
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" Background="Transparent" />
+
+            <!-- Details -->
+            <Border Grid.Column="2" Style="{StaticResource Panel}">
+                <Grid x:Name="DetailPanel">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" MinHeight="120" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="0.7*" MinHeight="70" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="PkgName" Style="{StaticResource Title}" />
+                            <Border Style="{StaticResource TagChip}" Margin="10,0,0,0" Padding="9,1" VerticalAlignment="Center">
+                                <TextBlock x:Name="PkgVersion" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Accent}" />
+                            </Border>
+                        </StackPanel>
+                        <ItemsControl x:Name="PkgChips" Margin="0,8,0,0">
+                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Style="{StaticResource Chip}"><TextBlock Text="{Binding}" FontSize="12" Foreground="{DynamicResource Fg}" /></Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock x:Name="PkgDescription" TextWrapping="Wrap" Margin="0,4,0,0" />
+                        <TextBlock x:Name="PkgLink" Margin="0,4,0,0" Visibility="Collapsed">
+                            <Hyperlink x:Name="PkgHyperlink" RequestNavigate="Hyperlink_RequestNavigate" Foreground="{DynamicResource Accent}">
+                                <TextBlock x:Name="PkgLinkText" />
+                            </Hyperlink>
+                        </TextBlock>
+                        <TextBlock x:Name="PkgWarnings" Foreground="{DynamicResource Warn}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                        <Border x:Name="UpdateBanner" Style="{StaticResource TagChip}" CornerRadius="6" Padding="12,8" Margin="0,10,0,0" Visibility="Collapsed">
+                            <DockPanel>
+                                <Button x:Name="UpdateButton" DockPanel.Dock="Right" Style="{StaticResource AccentButton}" Content="Update" Margin="12,0,0,0" Click="UpdatePackage_Click" />
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock x:Name="UpdateBannerTitle" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="UpdateBannerText" Style="{StaticResource Muted}" />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                        <Border x:Name="InstalledBanner" Style="{StaticResource Chip}" CornerRadius="6" Padding="12,8" Margin="0,10,0,0" Visibility="Collapsed">
+                            <DockPanel>
+                                <Button x:Name="UninstallPackageButton" DockPanel.Dock="Right" Content="Uninstall package" Margin="12,0,0,0" Click="UninstallPackage_Click" />
+                                <TextBlock x:Name="InstalledBannerText" VerticalAlignment="Center" TextWrapping="Wrap" />
+                            </DockPanel>
+                        </Border>
+                        <DockPanel Margin="0,14,0,0">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <Button Content="Select all" Click="SelectAll_Click" Padding="10,3" />
+                                <Button Content="Select none" Click="SelectNone_Click" Padding="10,3" Margin="0" />
+                            </StackPanel>
+                            <TextBlock Text="WHAT'S INSIDE" Style="{StaticResource SectionLabel}" VerticalAlignment="Center" />
+                        </DockPanel>
+                    </StackPanel>
+
+                    <ListBox x:Name="ComponentList" Grid.Row="1" SelectionChanged="ComponentList_SelectionChanged">
+                        <ListBox.GroupStyle>
+                            <GroupStyle>
+                                <GroupStyle.HeaderTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Name}" Style="{StaticResource SectionLabel}" Margin="4,8,0,6" />
+                                    </DataTemplate>
+                                </GroupStyle.HeaderTemplate>
+                            </GroupStyle>
+                        </ListBox.GroupStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" IsEnabled="{Binding Installable}" VerticalAlignment="Top" Margin="0,2,10,0" />
+                                    <Button Grid.Column="2" Content="Uninstall" Padding="10,3" Margin="10,0,0,0" VerticalAlignment="Top"
+                                            Click="UninstallItem_Click" ToolTip="Remove this item from the selected destination"
+                                            Visibility="{Binding IsInstalledHere, Converter={StaticResource BoolToVis}}" />
+                                    <StackPanel Grid.Column="1">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                            <Border Style="{StaticResource TagChip}" Margin="8,0,0,0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding KindTag}" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Accent}" />
+                                            </Border>
+                                            <Border Style="{StaticResource TagChip}" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                    Visibility="{Binding IsInstalledHere, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="INSTALLED" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Accent}" />
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Description}" Style="{StaticResource Muted}" MaxHeight="38" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <GridSplitter Grid.Row="2" HorizontalAlignment="Stretch" Background="Transparent" />
+
+                    <DockPanel Grid.Row="3">
+                        <TextBlock x:Name="PreviewTitle" DockPanel.Dock="Top" Style="{StaticResource SectionLabel}" Margin="0,0,0,6" Text="PREVIEW" />
+                        <TextBox x:Name="PreviewBox" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                 FontFamily="Consolas" AcceptsReturn="True" VerticalContentAlignment="Top" />
+                    </DockPanel>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Install bar -->
+        <Border Grid.Row="3" Style="{StaticResource Panel}" Margin="0,12,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <WrapPanel>
+                        <TextBlock Text="INSTALL TO" Style="{StaticResource SectionLabel}" VerticalAlignment="Center" Margin="0,0,12,0" />
+                        <RadioButton x:Name="UserScopeRadio" Content="User folders" Checked="Target_Changed" Margin="0,0,6,0" />
+                        <RadioButton x:Name="RepoScopeRadio" Content="This repository" Checked="Target_Changed" Margin="0,0,20,0" />
+                        <TextBlock Text="CLIENT" Style="{StaticResource SectionLabel}" VerticalAlignment="Center" Margin="0,0,12,0" />
+                        <ComboBox x:Name="LayoutCombo" Width="270" SelectionChanged="Target_Changed" Margin="0,0,20,0" />
+                        <CheckBox x:Name="OverwriteCheck" Content="Overwrite existing" VerticalAlignment="Center" />
+                    </WrapPanel>
+                    <TextBlock x:Name="DestinationText" Style="{StaticResource Muted}" FontFamily="Consolas" FontSize="11" Margin="0,10,0,0" />
+                </StackPanel>
+                <Button x:Name="InstallButton" Grid.Column="1" Style="{StaticResource AccentButton}" Content="Install" Padding="22,10"
+                        Margin="16,0,0,0" VerticalAlignment="Center" Click="Install_Click" IsEnabled="False" />
+            </Grid>
+        </Border>
+
+        <TextBox x:Name="LogBox" Grid.Row="4" IsReadOnly="True" Margin="0,10,0,0" MaxHeight="180" VerticalScrollBarVisibility="Auto"
+                 TextWrapping="Wrap" FontFamily="Consolas" Visibility="Collapsed" />
+    </Grid>
+</UserControl>

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <Extern href="stdidcmd.h" />
+  <Extern href="vsshlids.h" />
+
+  <Commands package="guidAgentsPluginsPackage">
+    <Groups>
+      <Group guid="guidAgentsPluginsCmdSet" id="ToolsMenuGroup" priority="0x0600">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS" />
+      </Group>
+    </Groups>
+    <Buttons>
+      <Button guid="guidAgentsPluginsCmdSet" id="ShowPluginManagerCommandId" priority="0x0100" type="Button">
+        <Parent guid="guidAgentsPluginsCmdSet" id="ToolsMenuGroup" />
+        <Icon guid="guidAgentsPluginsImages" id="iconPlugin" />
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>Agent Plugin Manager...</ButtonText>
+        </Strings>
+      </Button>
+    </Buttons>
+    <Bitmaps>
+      <Bitmap guid="guidAgentsPluginsImages" href="Resources\MenuIcon.png" usedList="iconPlugin" />
+    </Bitmaps>
+  </Commands>
+
+  <Symbols>
+    <GuidSymbol name="guidAgentsPluginsPackage" value="{6b0a5f0e-2c58-4c0e-9a36-4d8a5b1f7c21}" />
+    <GuidSymbol name="guidAgentsPluginsCmdSet" value="{c3e1d7a4-84b6-4f6b-8d2a-1a9d3e5f7b02}">
+      <IDSymbol name="ToolsMenuGroup" value="0x1020" />
+      <IDSymbol name="ShowPluginManagerCommandId" value="0x0100" />
+    </GuidSymbol>
+    <GuidSymbol name="guidAgentsPluginsImages" value="{e4b7a9c2-3d15-4f8e-b6a0-7c2d9e1f4a38}">
+      <IDSymbol name="iconPlugin" value="1" />
+    </GuidSymbol>
+  </Symbols>
+</CommandTable>
