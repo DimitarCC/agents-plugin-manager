@@ -69,10 +69,18 @@ export interface InstalledComponent {
   name: string;
 }
 
-/** What was installed from a package, where, and at which version. */
+/**
+ * What was installed from a package, where, and at which version.
+ * Persisted in `<scope root>/.agents/plugin-lock.json` (see docs/plugin-lock.md), shared with the Visual Studio edition.
+ * `scope` and `repoRoot` come from which lock file the record was read from; they are not stored inside it.
+ */
 export interface InstallRecord {
   packageName: string;
-  sourceId: string;
+  /** Source key (see sourcekey.ts): identifies the repository regardless of how it was entered. */
+  sourceKey: string;
+  sourceKind: SourceKind;
+  sourceLocation: string;
+  ref: string;
   version: string;
   /** Content hash of the installed components; detects changes when a package has no version. */
   fingerprint: string;
@@ -81,14 +89,24 @@ export interface InstallRecord {
   layout: ClientLayout;
   components: InstalledComponent[];
   installedUtc: string;
+  /** "<tool> <version>" of the last writer. */
+  installedBy: string;
 }
 
-export function recordKey(sourceId: string, packageName: string, scope: InstallScope, repoRoot: string | undefined, layout: ClientLayout): string {
-  return [sourceId, packageName, scope, scope === 'repo' ? repoRoot ?? '' : '', layout].join('|');
+/** Identifies the source a record or install belongs to. */
+export interface SourceInfo {
+  key: string;
+  kind: SourceKind;
+  location: string;
+  ref: string;
+}
+
+export function recordKey(sourceKey: string, packageName: string, scope: InstallScope, repoRoot: string | undefined, layout: ClientLayout): string {
+  return [sourceKey, packageName.toLowerCase(), scope, scope === 'repo' ? (repoRoot ?? '').toLowerCase() : '', layout].join('|');
 }
 
 export function keyOf(r: InstallRecord): string {
-  return recordKey(r.sourceId, r.packageName, r.scope, r.repoRoot, r.layout);
+  return recordKey(r.sourceKey, r.packageName, r.scope, r.repoRoot, r.layout);
 }
 
 export function sameComponent(a: InstalledComponent, b: InstalledComponent): boolean {

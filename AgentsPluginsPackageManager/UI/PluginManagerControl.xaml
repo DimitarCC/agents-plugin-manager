@@ -167,6 +167,18 @@
                                 <TextBlock x:Name="InstalledBannerText" VerticalAlignment="Center" TextWrapping="Wrap" />
                             </DockPanel>
                         </Border>
+                        <Border x:Name="UntrackedBanner" Style="{StaticResource Chip}" CornerRadius="6" Padding="12,8" Margin="0,10,0,0"
+                                BorderBrush="{DynamicResource Warn}" Visibility="Collapsed">
+                            <DockPanel>
+                                <Button x:Name="TrackButton" DockPanel.Dock="Right" Content="Track them" Margin="12,0,0,0" Click="TrackPackage_Click"
+                                        ToolTip="Record these items so they can be updated or uninstalled from here" />
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock x:Name="UntrackedBannerText" TextWrapping="Wrap" />
+                                    <TextBlock Style="{StaticResource Muted}" FontSize="11"
+                                               Text="Installed by hand or by another tool. Tracking them lets this tool update or uninstall them." />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
                         <DockPanel Margin="0,14,0,0">
                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                                 <Button Content="Select all" Click="SelectAll_Click" Padding="10,3" />
@@ -207,6 +219,12 @@
                                             <Border Style="{StaticResource TagChip}" Margin="6,0,0,0" VerticalAlignment="Center"
                                                     Visibility="{Binding IsInstalledHere, Converter={StaticResource BoolToVis}}">
                                                 <TextBlock Text="INSTALLED" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Accent}" />
+                                            </Border>
+                                            <Border Style="{StaticResource TagChip}" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                    BorderBrush="{DynamicResource Warn}" TextElement.Foreground="{DynamicResource Warn}"
+                                                    ToolTip="Found at this destination but not tracked by Agent Plugin Manager"
+                                                    Visibility="{Binding HasPresence, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="{Binding PresenceLabel}" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Warn}" />
                                             </Border>
                                         </StackPanel>
                                         <TextBlock Text="{Binding Description}" Style="{StaticResource Muted}" MaxHeight="38" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />

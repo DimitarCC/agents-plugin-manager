@@ -4,6 +4,21 @@ All notable changes to the VS Code extension are documented here.
 The Visual Studio extension has its own [changelog](../CHANGELOG.md).
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-11-12
+
+Matches Visual Studio edition 1.1.0.
+
+### Added
+- **Shared install records.** Installs are recorded in `plugin-lock.json` at the destination (`~/.agents/` for user folders, `<repo>/.agents/` for a repository) and shared with the Visual Studio edition, so each sees what the other installed, updated or removed. The repository file is meant to be committed. Format: [docs/plugin-lock.md](../docs/plugin-lock.md).
+- **Present but not tracked.** Items that exist at a destination without a lock entry are marked **PRESENT**, or **PRESENT · DIFFERS** when their content differs from the package. **Track them** records them so they can be updated or uninstalled.
+- Installing over an identical item that is already there now tracks it instead of skipping it.
+- The installed banner shows which tool last changed the install; the destination list shows the lock file path.
+- Source identity by address: the same repository added in both editions is recognised as one source.
+
+### Changed
+- Records from 1.0.0 (`installed.json` in the extension's storage) are migrated into the lock files on first run.
+- Content fingerprints use a defined, cross-edition algorithm.
+
 ## [1.0.0] - 2026-11-11
 
 First release. Feature parity with the Visual Studio extension 1.0.2.

@@ -17,6 +17,8 @@ type FromWebview =
   | { type: 'updateAll' }
   | { type: 'uninstall'; pkg: string; items: InstalledComponent[] | 'all' }
   | { type: 'preview'; pkg: string; kind: string; name: string }
+  | { type: 'presence'; pkg: string }
+  | { type: 'track'; pkg: string }
   | { type: 'openLink'; pkg: string }
   | { type: 'browseFolder' };
 
@@ -74,7 +76,7 @@ export class ManagerPanel {
       switch (m.type) {
         case 'ready':
           await this.pushState();
-          if (!this.manager.packagesSourceId && this.manager.currentSource && !this.manager.busy) {
+          if (!this.manager.packagesSource && this.manager.currentSource && !this.manager.busy) {
             await this.manager.init();
           }
           break;
@@ -106,6 +108,10 @@ export class ManagerPanel {
         case 'preview':
           this.post({ type: 'preview', pkg: m.pkg, kind: m.kind, name: m.name, text: this.manager.getPreview(m.pkg, m.kind, m.name) });
           break;
+        case 'presence':
+          this.post({ type: 'presence', pkg: m.pkg, items: this.manager.presence(m.pkg) });
+          break;
+        case 'track': await this.manager.track(m.pkg); break;
         case 'openLink': {
           const url = this.manager.getHomepage(m.pkg);
           if (/^https?:\/\//i.test(url)) {

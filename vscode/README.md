@@ -16,6 +16,8 @@ Open it from the Command Palette: **Agent Plugin Manager: Open**. It opens as an
 - **See what is inside:** every package lists its skills, agents, prompts and MCP servers with descriptions and a preview of the content.
 - **Install only what you need:** tick individual items, a whole package, or all packages.
 - **Choose where it goes:** user folders (all projects) or the open repository, for GitHub Copilot, Claude Code or an agent-neutral `.agents` layout.
+- **Shared with Visual Studio:** installs are recorded in a small `plugin-lock.json` at the destination (`~/.agents/` or `<repo>/.agents/`). The Visual Studio edition uses the same file, so each sees what the other installed. Commit the repository file to share it with your team.
+- **Present but not tracked:** items already at a destination (installed by hand or by another tool) are marked, compared with the package (identical or different), and can be tracked with one click.
 - **Updates:** installed packages are compared with the source on every refresh. Update manually, or turn on auto-update (also checks shortly after VS Code starts).
 - **Uninstall:** remove a single item or a whole package.
 - **Follows your theme:** dark, light and high-contrast.
@@ -40,7 +42,7 @@ MCP servers are never selected by default. They are merged into the existing con
 - No telemetry. The extension talks only to the sources you add, through your local `git`.
 - Access tokens are kept in VS Code's secret storage. They are passed to git through the environment, never on a command line or in a log.
 - Installing a package copies files, and optionally MCP server entries, into the folders shown above. MCP servers can run programs or reach the network, so install them only from sources you trust.
-- Settings and install records live in the extension's global storage folder.
+- Settings live in the extension's global storage folder. Install records live next to what you install, in `.agents/plugin-lock.json` (format: [docs/plugin-lock.md](https://github.com/DimitarCC/agents-plugin-manager/blob/main/docs/plugin-lock.md)). The file lists package names, versions, source addresses and the items installed, never credentials.
 
 ## Links
 

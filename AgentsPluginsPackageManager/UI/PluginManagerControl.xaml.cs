@@ -32,11 +32,14 @@ namespace AgentsPluginsPackageManager.UI
         private CancellationTokenSource? _loadCts;
         private bool _loading;
         private bool _initialized;
-        private string _packagesSourceId = "";
+        private PluginSource? _packagesSource;
+        private string _packagesSourceKey = "";
         private List<UpdateInfo> _updates = new List<UpdateInfo>();
 
         public PluginManagerControl()
         {
+            // Records from earlier versions lived in a per-tool file; move them into the shared lock files.
+            try { LockStore.MigrateLegacy(_settings.Sources); } catch { /* not fatal */ }
             InitializeComponent();
             Theme.Apply(Resources);
             Theme.Track(this);
@@ -134,7 +137,8 @@ namespace AgentsPluginsPackageManager.UI
                 var root = await Task.Run(() => SourceSync.SyncAsync(source, progress, cts.Token), cts.Token);
                 var found = await Task.Run(() => PluginScanner.Discover(root), cts.Token);
                 if (cts.IsCancellationRequested) return;
-                _packagesSourceId = source.Id;
+                _packagesSource = source;
+                _packagesSourceKey = SourceKey.Of(source);
                 SetPackages(found);
                 RefreshUpdateState();
                 SetStatus(found.Count + " plugin package(s) in " + source.DisplayName
@@ -176,9 +180,9 @@ namespace AgentsPluginsPackageManager.UI
         /// <summary>Compares installed records with the freshly loaded source and refreshes badges / buttons.</summary>
         private void RefreshUpdateState()
         {
-            var records = InstallStore.Load();
-            UpdateService.Annotate(_packages, _packagesSourceId, records);
-            _updates = UpdateService.FindUpdates(_packages, _packagesSourceId, records);
+            var records = LockStore.LoadAll(GetRepoRoot());
+            UpdateService.Annotate(_packages, _packagesSourceKey, records);
+            _updates = UpdateService.FindUpdates(_packages, _packagesSourceKey, records);
             UpdateAllButton.Visibility = _updates.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             UpdateAllButton.Content = "Update all (" + _updates.Count + ")";
             ShowUpdateBanner(CurrentPackage);
@@ -195,22 +199,63 @@ namespace AgentsPluginsPackageManager.UI
             var scope = CurrentScope;
             var repo = scope == InstallScope.Repository ? GetRepoRoot() : null;
             if (scope == InstallScope.Repository && repo == null) return null;
-            var key = InstallRecord.MakeKey(_packagesSourceId, p.Name, scope, repo, CurrentLayout);
-            return InstallStore.Load().FirstOrDefault(r => r.Key == key);
+            var key = InstallRecord.MakeKey(_packagesSourceKey, p.Name, scope, repo, CurrentLayout);
+            return LockStore.Load(scope, repo).FirstOrDefault(r => r.Key == key);
         }
 
         private void RefreshInstalledMarks()
         {
             var p = CurrentPackage;
             var rec = CurrentRecord();
+            var scope = CurrentScope;
+            var repo = scope == InstallScope.Repository ? GetRepoRoot() : null;
+
             if (p != null)
+            {
                 foreach (var c in p.Components)
                     c.IsInstalledHere = rec != null && rec.Components.Any(i => i.Kind == c.Kind && string.Equals(i.Name, c.Name, StringComparison.OrdinalIgnoreCase));
 
+                // Items that are at the destination but not tracked (installed by hand or by another tool without a lock entry).
+                var untracked = scope == InstallScope.Repository && repo == null
+                    ? new List<PresenceItem>()
+                    : UpdateService.UntrackedPresence(p, rec, scope, CurrentLayout, repo);
+                foreach (var c in p.Components)
+                    c.Presence = untracked.FirstOrDefault(u => u.Kind == c.Kind && u.Name == c.Name)?.State ?? "";
+
+                if (untracked.Count > 0)
+                {
+                    int same = untracked.Count(u => u.State != "differs"), diff = untracked.Count - same;
+                    var parts = new List<string>();
+                    if (same > 0) parts.Add(same + " identical");
+                    if (diff > 0) parts.Add(diff + " different");
+                    UntrackedBannerText.Text = untracked.Count + " item(s) already present at this destination but not tracked (" + string.Join(", ", parts) + ").";
+                    UntrackedBanner.Visibility = Visibility.Visible;
+                }
+                else UntrackedBanner.Visibility = Visibility.Collapsed;
+            }
+            else UntrackedBanner.Visibility = Visibility.Collapsed;
+
             if (p == null || rec == null) { InstalledBanner.Visibility = Visibility.Collapsed; return; }
             InstalledBannerText.Text = "Installed at this destination (" + rec.Where + ")"
-                + (string.IsNullOrEmpty(rec.Version) ? "" : "  ·  v" + rec.Version) + "  ·  " + rec.Components.Count + " item(s)";
+                + (string.IsNullOrEmpty(rec.Version) ? "" : "  ·  v" + rec.Version) + "  ·  " + rec.Components.Count + " item(s)"
+                + (string.IsNullOrEmpty(rec.InstalledBy) ? "" : "  ·  last changed by " + rec.InstalledBy);
             InstalledBanner.Visibility = Visibility.Visible;
+        }
+
+        private void TrackPackage_Click(object sender, RoutedEventArgs e)
+        {
+            var p = CurrentPackage;
+            if (p == null || _packagesSource == null) return;
+            var scope = CurrentScope;
+            var repo = scope == InstallScope.Repository ? GetRepoRoot() : null;
+            if (scope == InstallScope.Repository && repo == null) return;
+            try
+            {
+                var n = UpdateService.TrackPresent(p, SourceKey.InfoOf(_packagesSource), scope, repo, CurrentLayout);
+                ShowLog(n == 0 ? "Nothing to track." : "Now tracking " + n + " item(s) of '" + p.Name + "' at this destination.");
+            }
+            catch (Exception ex) { ShowLog("Could not track items: " + ex.Message); }
+            RefreshUpdateState();
         }
 
         private async void UninstallItem_Click(object sender, RoutedEventArgs e)
@@ -236,7 +281,7 @@ namespace AgentsPluginsPackageManager.UI
             try
             {
                 var res = await Task.Run(() => PluginInstaller.Uninstall(rec, items));
-                InstallStore.RemoveComponents(rec.Key, res.RemovedComponents);
+                LockStore.RemoveComponents(rec, res.RemovedComponents);
                 var sb = new StringBuilder("Uninstalled " + res.RemovedComponents.Count + " item(s) of '" + rec.PackageName + "' from " + rec.Where + ":").AppendLine();
                 foreach (var s in res.Removed) sb.AppendLine("  - " + s);
                 foreach (var s in res.Skipped) sb.AppendLine("  ! could not remove " + s);
@@ -424,6 +469,7 @@ namespace AgentsPluginsPackageManager.UI
             if (l.AgentsDir != null) sb.AppendLine("agents   " + l.AgentsDir);
             if (l.PromptsDir != null) sb.AppendLine("prompts  " + l.PromptsDir);
             if (l.McpFile != null) sb.AppendLine("mcp      " + l.McpFile);
+            sb.AppendLine("lock     " + LockStore.LockPath(scope, repo));
             DestinationText.Text = sb.ToString().TrimEnd();
         }
 
@@ -465,7 +511,8 @@ namespace AgentsPluginsPackageManager.UI
                     try
                     {
                         var res = await Task.Run(() => PluginInstaller.Install(req));
-                        UpdateService.Record(w.Package, _packagesSourceId, scope, repo, layout, res.InstalledComponents);
+                        if (_packagesSource != null)
+                            UpdateService.Record(w.Package, SourceKey.InfoOf(_packagesSource), scope, repo, layout, res.InstalledComponents);
                         sb.AppendLine(w.Package.Name + ": installed " + res.Installed.Count + ", skipped " + res.Skipped.Count);
                         foreach (var s in res.Installed) sb.AppendLine("  + " + s);
                         foreach (var s in res.Skipped) sb.AppendLine("  - " + s);

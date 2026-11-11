@@ -76,7 +76,7 @@ namespace AgentsPluginsPackageManager.Services
             pkg.HasManifest = manifest != null;
             if (manifest != null)
             {
-                var j = JObject.Parse(File.ReadAllText(manifest));
+                var j = Json.ParseObject(File.ReadAllText(manifest)) ?? throw new JsonException("plugin.json is not a JSON object");
                 pkg.Name = (string?)j["name"] ?? pkg.Name;
                 pkg.Version = (string?)j["version"] ?? "";
                 pkg.Description = (string?)j["description"] ?? "";
@@ -154,7 +154,7 @@ namespace AgentsPluginsPackageManager.Services
             var file = new[] { "mcp.json", ".mcp.json" }.Select(n => Path.Combine(dir, n)).FirstOrDefault(File.Exists);
             if (file == null) return;
             JObject root;
-            try { root = JObject.Parse(File.ReadAllText(file)); }
+            try { root = Json.ParseObject(File.ReadAllText(file)) ?? throw new JsonException("not an object"); }
             catch (Exception ex) { pkg.Warnings.Add("mcp.json is invalid: " + ex.Message); return; }
             var servers = (root["mcpServers"] ?? root["servers"]) as JObject;
             if (servers == null) return;

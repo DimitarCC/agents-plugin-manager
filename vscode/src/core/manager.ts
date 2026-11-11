@@ -3,9 +3,11 @@ import * as path from 'path';
 import { ensureDir, readJsonFile, writeJsonFile } from './fsutil';
 import { GitError, SyncContext, basicAuthHeader, syncSource, testSource } from './git';
 import { InstallEnv, install, resolveLayout, uninstall, findRepoRoot } from './installer';
+import { LockStore } from './lockstore';
 import { discover, kindOrder } from './scanner';
+import { sourceKey } from './sourcekey';
 import {
-  annotate, applyUpdate, findUpdates, recordInstall, RecordStore, UpdateInfo, runAutoUpdate,
+  PresenceItem, UpdateInfo, annotate, applyUpdate, recordInstall, runAutoUpdate, sourceInfoOf, trackPresent, untrackedPresence,
 } from './updates';
 import {
   AuthMode, ClientLayout, InstallRecord, InstallScope, InstalledComponent, PluginComponent, PluginPackage,
@@ -16,6 +18,8 @@ import {
 export interface Host {
   dataRoot: string;
   env: InstallEnv;
+  /** "<tool> <version>", written to the lock file as `installedBy`. */
+  toolName: string;
   confirm(message: string, detail?: string): Promise<boolean>;
   pickFolder(): Promise<string | undefined>;
   /** Folder of the open workspace, if any. */
@@ -64,7 +68,7 @@ export interface ViewPackage {
   installedSummary: string;
   hasUpdate: boolean;
   updateText: string;
-  installedHere?: { where: string; version: string; count: number };
+  installedHere?: { where: string; version: string; count: number; installedBy: string };
   components: ViewComponent[];
 }
 
@@ -98,9 +102,9 @@ function summarize(p: PluginPackage): string {
 
 export class Manager {
   settings: Settings;
-  readonly store: RecordStore;
+  readonly lock: LockStore;
   packages: PluginPackage[] = [];
-  packagesSourceId = '';
+  packagesSource?: PluginSource;
   updates: UpdateInfo[] = [];
   busy = false;
   status = '';
@@ -112,7 +116,13 @@ export class Manager {
 
   constructor(private readonly host: Host) {
     this.settings = this.loadSettings();
-    this.store = new RecordStore(host.dataRoot);
+    this.lock = new LockStore(host.env.home, host.dataRoot, host.toolName);
+    this.lock.migrateLegacy(this.settings.sources);
+  }
+
+  /** Key of the source the loaded packages came from ('' when none). */
+  get packagesSourceKey(): string {
+    return this.packagesSource ? sourceKey(this.packagesSource) : '';
   }
 
   // ───────── settings ─────────
@@ -159,6 +169,7 @@ export class Manager {
     if (l.agentsDir) { lines.push('agents   ' + l.agentsDir); }
     if (l.promptsDir) { lines.push('prompts  ' + l.promptsDir); }
     if (l.mcpFile) { lines.push('mcp      ' + l.mcpFile); }
+    lines.push('lock     ' + this.lock.lockPath(this.settings.scope, repo));
     return lines;
   }
 
@@ -182,8 +193,8 @@ export class Manager {
     if (this.settings.scope === 'repo' && !repo) {
       return undefined;
     }
-    const key = recordKey(this.packagesSourceId, pkgName, this.settings.scope, repo, this.settings.layout);
-    return this.store.load().find(r => keyOf(r) === key);
+    const key = recordKey(this.packagesSourceKey, pkgName, this.settings.scope, repo, this.settings.layout);
+    return this.lock.load(this.settings.scope, repo).find(r => keyOf(r) === key);
   }
 
   // ───────── sources ─────────
@@ -249,7 +260,7 @@ export class Manager {
     this.save();
     this.packages = [];
     this.updates = [];
-    this.packagesSourceId = '';
+    this.packagesSource = undefined;
     this.status = this.settings.sources.length === 0 ? 'Add a source repository to get started.' : '';
     this.onChange();
     if (this.currentSource) {
@@ -289,7 +300,7 @@ export class Manager {
     this.abort?.abort();
     this.packages = [];
     this.updates = [];
-    this.packagesSourceId = '';
+    this.packagesSource = undefined;
     if (!source) {
       this.status = 'Add a source repository to get started.';
       this.onChange();
@@ -313,7 +324,7 @@ export class Manager {
         return;
       }
       this.packages = found;
-      this.packagesSourceId = source.id;
+      this.packagesSource = source;
       this.refreshUpdateState();
       this.status = `${found.length} plugin package(s) in ${source.name}` + (this.updates.length > 0 ? ` · ${this.updates.length} update(s) available` : '');
       this.busy = false;
@@ -336,10 +347,10 @@ export class Manager {
   }
 
   private refreshUpdateState(): void {
-    this.updates = annotate(this.packages, this.packagesSourceId, this.store.load());
+    this.updates = annotate(this.packages, this.packagesSourceKey, this.lock.loadAll(this.getRepoRoot()));
   }
 
-  // ───────── install / update / uninstall ─────────
+  // ───────── install / update / uninstall / track ─────────
 
   async install(items: InstallItem[], overwrite: boolean): Promise<void> {
     const work = items
@@ -349,7 +360,7 @@ export class Manager {
         return { pkg, comps };
       })
       .filter(w => w.pkg && w.comps.length > 0) as Array<{ pkg: PluginPackage; comps: PluginComponent[] }>;
-    if (work.length === 0) {
+    if (work.length === 0 || !this.packagesSource) {
       this.onLog('Nothing selected. Tick the items or packages you want to install.');
       return;
     }
@@ -366,11 +377,12 @@ export class Manager {
     }
 
     const layout = this.settings.layout;
+    const info = sourceInfoOf(this.packagesSource);
     const lines: string[] = [];
     for (const w of work) {
       try {
         const res = install({ pkg: w.pkg, components: w.comps, scope, layout, repoRoot: repo, overwrite, env: this.host.env });
-        recordInstall(this.store, w.pkg, this.packagesSourceId, scope, repo, layout, res.installedComponents);
+        recordInstall(this.lock, w.pkg, info, scope, repo, layout, res.installedComponents);
         lines.push(`${w.pkg.name}: installed ${res.installed.length}, skipped ${res.skipped.length}`);
         res.installed.forEach(s => lines.push('  + ' + s));
         res.skipped.forEach(s => lines.push('  - ' + s));
@@ -399,7 +411,7 @@ export class Manager {
     const lines = [auto ? 'Auto-updated installed plugins:' : 'Updated installed plugins:'];
     for (const u of updates) {
       try {
-        applyUpdate(u, this.store, this.host.env);
+        applyUpdate(u, this.lock, this.host.env);
         lines.push(`  ✓ ${u.pkg.name}  ${u.fromVersion} → ${u.toVersion}  (${whereLabel(u.record)})`);
       } catch (ex: any) {
         lines.push(`  ✗ ${u.pkg.name} (${whereLabel(u.record)}): ${ex.message}`);
@@ -423,7 +435,7 @@ export class Manager {
     }
     try {
       const res = uninstall(rec, list, this.host.env);
-      this.store.removeComponents(keyOf(rec), res.removedComponents);
+      this.lock.removeComponents(rec, res.removedComponents);
       const lines = [`Uninstalled ${res.removedComponents.length} item(s) of '${rec.packageName}' from ${whereLabel(rec)}:`];
       res.removed.forEach(s => lines.push('  - ' + s));
       res.skipped.forEach(s => lines.push('  ! could not remove ' + s));
@@ -435,12 +447,41 @@ export class Manager {
     this.onChange();
   }
 
+  /** Items of a package that exist at the current destination but are not tracked (e.g. installed by hand or by another tool). */
+  presence(pkgName: string): PresenceItem[] {
+    const pkg = this.packages.find(p => p.name === pkgName);
+    if (!pkg) {
+      return [];
+    }
+    const repo = this.settings.scope === 'repo' ? this.getRepoRoot() : undefined;
+    if (this.settings.scope === 'repo' && !repo) {
+      return [];
+    }
+    return untrackedPresence(pkg, this.currentRecord(pkgName), this.settings.scope, this.settings.layout, repo, this.host.env);
+  }
+
+  /** Starts tracking the untracked items of a package at the current destination. */
+  async track(pkgName: string): Promise<void> {
+    const pkg = this.packages.find(p => p.name === pkgName);
+    if (!pkg || !this.packagesSource) {
+      return;
+    }
+    const repo = this.settings.scope === 'repo' ? this.getRepoRoot() : undefined;
+    if (this.settings.scope === 'repo' && !repo) {
+      return;
+    }
+    const n = trackPresent(this.lock, pkg, sourceInfoOf(this.packagesSource), this.settings.scope, repo, this.settings.layout, this.host.env);
+    this.refreshUpdateState();
+    this.onLog(n === 0 ? 'Nothing to track.' : `Now tracking ${n} item(s) of '${pkgName}' at this destination.`);
+    this.onChange();
+  }
+
   /** Background check used at startup: never opens a sign-in prompt. */
   async runBackgroundUpdate(): Promise<string[]> {
     if (!this.settings.autoUpdate) {
       return [];
     }
-    return runAutoUpdate(this.settings, this.store, this.host.env, async src => ({
+    return runAutoUpdate(this.settings, this.lock, this.host.env, async src => ({
       cacheRoot: path.join(this.host.dataRoot, 'cache'),
       authHeader: await this.host.authHeader(src, false),
       interactive: false,
@@ -460,9 +501,9 @@ export class Manager {
   // ───────── view state ─────────
 
   async viewState(): Promise<ViewState> {
-    const records = this.store.load();
     const repo = this.settings.scope === 'repo' ? this.getRepoRoot() : undefined;
-    const hereKey = (p: string) => recordKey(this.packagesSourceId, p, this.settings.scope, repo, this.settings.layout);
+    const destRecords = this.settings.scope === 'repo' && !repo ? [] : this.lock.load(this.settings.scope, repo);
+    const hereKey = (p: string) => recordKey(this.packagesSourceKey, p, this.settings.scope, repo, this.settings.layout);
     const sources = [];
     for (const s of this.settings.sources) {
       let hasToken = this.tokenFlags.get(s.id);
@@ -474,13 +515,13 @@ export class Manager {
     }
 
     const packages: ViewPackage[] = this.packages.map(p => {
-      const here = (this.settings.scope === 'repo' && !repo) ? undefined : records.find(r => keyOf(r) === hereKey(p.name));
+      const here = destRecords.find(r => keyOf(r) === hereKey(p.name));
       const comps = [...p.components].sort((a, b) => kindOrder(a.kind) - kindOrder(b.kind));
       return {
         name: p.name, version: p.version, description: p.description, author: p.author, license: p.license, homepage: p.homepage,
         keywords: p.keywords, warnings: p.warnings, summary: summarize(p),
         installedSummary: p.installedSummary ?? '', hasUpdate: p.hasUpdate === true, updateText: p.updateText ?? '',
-        installedHere: here ? { where: whereLabel(here), version: here.version, count: here.components.length } : undefined,
+        installedHere: here ? { where: whereLabel(here), version: here.version, count: here.components.length, installedBy: here.installedBy } : undefined,
         components: comps.map(c => ({
           kind: c.kind, name: c.name, description: c.description, relativePath: c.relativePath, installable: c.installable,
           installedHere: !!here && here.components.some(ic => sameComponent(ic, c)),
@@ -501,9 +542,5 @@ export class Manager {
       updateCount: this.updates.length,
       packages,
     };
-  }
-
-  invalidateTokenFlag(id: string): void {
-    this.tokenFlags.delete(id);
   }
 }

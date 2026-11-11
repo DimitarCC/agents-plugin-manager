@@ -15,6 +15,7 @@
   let current = null;             // package shown in the detail pane
   let previewKey = null;          // component shown in the preview
   const previews = new Map();     // cached preview texts
+  const presence = new Map();     // pkg -> Map(kind SEP name -> 'same' | 'differs' | 'present'): items present but not tracked
   let dialog = null;              // state of the add/edit source dialog
 
   const $ = id => document.getElementById(id);
@@ -125,15 +126,22 @@
     if (p.license) { chips.push(p.license); }
     p.keywords.forEach(k => chips.push(k));
 
+    // Items that exist at the destination but are not tracked (installed by hand or by another tool).
+    const found = presence.get(p.name) || new Map();
+    const untracked = p.components.filter(c => !c.installedHere && found.has(c.kind + SEP + c.name));
+    const nSame = untracked.filter(c => found.get(c.kind + SEP + c.name) !== 'differs').length;
+    const nDiff = untracked.length - nSame;
+
     let comps = '';
     let lastKind = null;
     for (const c of p.components) {
       if (c.kind !== lastKind) { comps += `<div class="label group">${esc(KIND_LABEL[c.kind] || c.kind).toUpperCase()}</div>`; lastKind = c.kind; }
       const k = key(p.name, c);
+      const ps = c.installedHere ? '' : found.get(c.kind + SEP + c.name);
       comps += `<div class="comp${k === previewKey ? ' selected' : ''}" data-kind="${esc(c.kind)}" data-name="${esc(c.name)}">
         <label class="check"><input type="checkbox" class="cc"${sel.has(k) ? ' checked' : ''}${c.installable ? '' : ' disabled'}><span class="box"></span></label>
         <div class="cbody">
-          <div class="crow"><b>${esc(c.name)}</b><span class="tag">${KIND_TAG[c.kind] || ''}</span>${c.installedHere ? '<span class="tag">INSTALLED</span>' : ''}</div>
+          <div class="crow"><b>${esc(c.name)}</b><span class="tag">${KIND_TAG[c.kind] || ''}</span>${c.installedHere ? '<span class="tag">INSTALLED</span>' : ''}${ps ? `<span class="tag warn" title="Found at this destination but not tracked by Agent Plugin Manager">${ps === 'differs' ? 'PRESENT · DIFFERS' : 'PRESENT'}</span>` : ''}</div>
           <div class="cdesc">${esc(c.description)}</div>
         </div>
         ${c.installedHere ? '<button class="tiny" data-a="uninstallItem" title="Remove this item from the selected destination">Uninstall</button>' : ''}
@@ -151,7 +159,8 @@
         ${/^https?:\/\//i.test(p.homepage) ? `<a class="link" data-a="openLink">${esc(p.homepage)}</a>` : ''}
         ${p.warnings.length ? `<div class="warnings">${esc(p.warnings.join('\n'))}</div>` : ''}
         ${p.hasUpdate ? `<div class="banner update"><div><b>Update available  ${esc(p.updateText)}</b><div class="muted">${esc(p.installedSummary)}</div></div><button class="accent" data-a="updatePkg">Update</button></div>` : ''}
-        ${p.installedHere ? `<div class="banner"><div>Installed at this destination (${esc(p.installedHere.where)})${p.installedHere.version ? '  ·  v' + esc(p.installedHere.version) : ''}  ·  ${p.installedHere.count} item(s)</div><button data-a="uninstallPkg">Uninstall package</button></div>` : ''}
+        ${p.installedHere ? `<div class="banner"><div>Installed at this destination (${esc(p.installedHere.where)})${p.installedHere.version ? '  ·  v' + esc(p.installedHere.version) : ''}  ·  ${p.installedHere.count} item(s)${p.installedHere.installedBy ? '<div class="muted small">last changed by ' + esc(p.installedHere.installedBy) + '</div>' : ''}</div><button data-a="uninstallPkg">Uninstall package</button></div>` : ''}
+        ${untracked.length ? `<div class="banner warn"><div>${untracked.length} item(s) already present at this destination but not tracked${nSame || nDiff ? ' (' + [nSame ? nSame + ' identical' : '', nDiff ? nDiff + ' different' : ''].filter(Boolean).join(', ') + ')' : ''}.<div class="muted small">Installed by hand or by another tool. Track them to update or uninstall them from here.</div></div><button data-a="trackPkg">Track them</button></div>` : ''}
         <div class="inside-head"><span class="label">WHAT'S INSIDE</span>
           <div class="btns"><button class="tiny" data-a="selAllItems">Select all</button><button class="tiny" data-a="selNoneItems">Select none</button></div></div>
       </div>
@@ -169,6 +178,11 @@
     const b = $('btnInstall');
     b.textContent = n === 0 ? 'Install' : 'Install ' + n + ' selected';
     b.disabled = n === 0 || S.busy;
+  }
+
+  /** Asks the host which items of the selected package are present at the destination but not tracked. */
+  function requestPresence() {
+    if (current) { post({ type: 'presence', pkg: current }); }
   }
 
   function showLog(text) {
@@ -206,6 +220,7 @@
       previewKey = null;
       renderList();
       renderDetail();
+      requestPresence();
       return;
     }
 
@@ -258,6 +273,7 @@
       case 'updateAll': return post({ type: 'updateAll' });
       case 'updatePkg': return p && post({ type: 'update', pkg: p.name });
       case 'uninstallPkg': return p && post({ type: 'uninstall', pkg: p.name, items: 'all' });
+      case 'trackPkg': return p && post({ type: 'track', pkg: p.name });
       case 'uninstallItem': {
         const row = el.closest('.comp');
         return p && post({ type: 'uninstall', pkg: p.name, items: [{ kind: row.dataset.kind, name: row.dataset.name }] });
@@ -368,7 +384,15 @@
         for (const p of S.packages) { for (const c of p.components) { valid.add(key(p.name, c)); } }
         for (const k of Array.from(sel)) { if (!valid.has(k)) { sel.delete(k); } }
         renderAll();
+        requestPresence();   // destination, tracking or package may have changed
         break;
+      case 'presence': {
+        const map = new Map();
+        for (const it of m.items) { map.set(it.kind + SEP + it.name, it.state); }
+        presence.set(m.pkg, map);
+        if (m.pkg === current) { renderDetail(); }
+        break;
+      }
       case 'log': showLog(m.text); break;
       case 'preview': {
         const k = m.pkg + SEP + m.kind + SEP + m.name;

@@ -13,6 +13,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const host: Host = {
     dataRoot,
+    toolName: `vscode ${context.extension.packageJSON.version}`,
     env: {
       home: os.homedir(),
       // <User>/globalStorage/<extension id>  ->  <User>  (holds mcp.json and the prompts folder of the active profile)

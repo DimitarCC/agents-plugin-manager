@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "installs": [
+    {
+      "package": "code-review-kit",
+      "source": "github.com/owner/repo",
+      "sourceKind": "git",
+      "sourceLocation": "https://github.com/Owner/Repo.git",
+      "ref": "",
+      "version": "1.4.0",
+      "fingerprint": "QWTJDtp+QpbgJMlBUENK37ytEns=",
+      "layout": "claude",
+      "components": [
+        {
+          "kind": "prompt",
+          "name": "explain-code"
+        }
+      ],
+      "installedAt": "2026-11-12T09:31:00.000Z",
+      "installedBy": "vscode 1.1.0"
+    },
+    {
+      "package": "code-review-kit",
+      "source": "github.com/owner/repo",
+      "sourceKind": "git",
+      "sourceLocation": "https://github.com/Owner/Repo.git",
+      "ref": "",
+      "version": "1.4.0",
+      "fingerprint": "QWTJDtp+QpbgJMlBUENK37ytEns=",
+      "layout": "copilot",
+      "components": [
+        {
+          "kind": "skill",
+          "name": "review-checklist"
+        },
+        {
+          "kind": "agent",
+          "name": "reviewer"
+        }
+      ],
+      "installedAt": "2026-11-12T09:30:00.000Z",
+      "installedBy": "vscode 1.1.0"
+    },
+    {
+      "package": "mcp-demo",
+      "source": "file:e:/plugins/café",
+      "sourceKind": "local",
+      "sourceLocation": "E:\\Plugins\\café",
+      "ref": "v2",
+      "version": "",
+      "fingerprint": "",
+      "layout": "copilot",
+      "components": [
+        {
+          "kind": "mcp",
+          "name": "remote-demo"
+        }
+      ],
+      "installedAt": "2026-11-12T10:00:00.000Z",
+      "installedBy": "visual-studio 1.1.0"
+    }
+  ]
+}

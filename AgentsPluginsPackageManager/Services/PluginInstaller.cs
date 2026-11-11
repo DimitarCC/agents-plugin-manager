@@ -52,7 +52,7 @@ namespace AgentsPluginsPackageManager.Services
         public static InstallLayout Resolve(InstallScope scope, ClientLayout layout, string? repoRoot)
         {
             var user = scope == InstallScope.User;
-            var baseDir = user ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) : (repoRoot ?? "");
+            var baseDir = user ? SettingsStore.Home : (repoRoot ?? "");
             var l = new InstallLayout();
             switch (layout)
             {
@@ -125,7 +125,7 @@ namespace AgentsPluginsPackageManager.Services
             var src = Path.Combine(pkg.RootPath, c.RelativePath.Replace('/', Path.DirectorySeparatorChar));
             if (Directory.Exists(target))
             {
-                if (!overwrite) { res.Skipped.Add($"{c.Name}: already exists ({target})"); return; }
+                if (!overwrite) { SkipExisting(c, src, target, true, res); return; }
                 SourceSync.ForceDelete(target);
             }
             CopyTree(src, target);
@@ -133,12 +133,59 @@ namespace AgentsPluginsPackageManager.Services
             res.InstalledComponents.Add(c);
         }
 
+        /// <summary>An item is already there: if it is identical to this package's version, just start tracking it; otherwise skip.</summary>
+        private static void SkipExisting(PluginComponent c, string src, string target, bool isDir, InstallResult res)
+        {
+            if (ContentHash.Block(src, isDir) == ContentHash.Block(target, isDir))
+            {
+                res.Installed.Add($"{c.Kind} {c.Name}: already up to date, now tracked ({target})");
+                res.InstalledComponents.Add(c);
+            }
+            else
+            {
+                res.Skipped.Add($"{c.Name}: already exists and differs from this version ({target}); tick \"Overwrite existing\" to replace it");
+            }
+        }
+
+        /// <summary>Where a component is installed for a layout, or null when the layout doesn't support its kind.</summary>
+        public static string? TargetPath(InstallLayout l, ComponentKind kind, string name)
+        {
+            switch (kind)
+            {
+                case ComponentKind.Skill: return l.SkillsDir == null ? null : Path.Combine(l.SkillsDir, SafeName(name));
+                case ComponentKind.Agent: return l.AgentsDir == null ? null : Path.Combine(l.AgentsDir, SafeName(name) + l.AgentSuffix);
+                case ComponentKind.Prompt: return l.PromptsDir == null ? null : Path.Combine(l.PromptsDir, SafeName(name) + l.PromptSuffix);
+                default: return null;
+            }
+        }
+
+        /// <summary>"" = not there; "same"/"differs" = present with identical/different content; "present" = MCP server (not comparable).</summary>
+        public static string PresenceOf(PluginPackage pkg, PluginComponent c, InstallScope scope, ClientLayout layout, string? repoRoot)
+        {
+            if (!c.Installable || (scope == InstallScope.Repository && string.IsNullOrEmpty(repoRoot))) return "";
+            var l = InstallLayout.Resolve(scope, layout, repoRoot);
+            if (c.Kind == ComponentKind.McpServer)
+            {
+                if (l.McpFile == null || !File.Exists(l.McpFile)) return "";
+                try
+                {
+                    var section = Json.ParseObject(File.ReadAllText(l.McpFile))?[l.McpSection] as JObject;
+                    return section != null && section[c.Name] != null ? "present" : "";
+                }
+                catch { return ""; }
+            }
+            var target = TargetPath(l, c.Kind, c.Name);
+            if (target == null || !(c.IsDirectory ? Directory.Exists(target) : File.Exists(target))) return "";
+            var src = Path.Combine(pkg.RootPath, c.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+            return ContentHash.Block(src, c.IsDirectory) == ContentHash.Block(target, c.IsDirectory) ? "same" : "differs";
+        }
+
         private static void CopyFile(PluginPackage pkg, PluginComponent c, string? targetDir, string suffix, bool overwrite, InstallResult res)
         {
             if (targetDir == null) { res.Skipped.Add($"{c.Name}: {c.Kind.ToString().ToLowerInvariant()}s aren't supported by this client layout"); return; }
             var src = Path.Combine(pkg.RootPath, c.RelativePath.Replace('/', Path.DirectorySeparatorChar));
             var target = Path.Combine(targetDir, SafeName(c.Name) + suffix);
-            if (File.Exists(target) && !overwrite) { res.Skipped.Add($"{c.Name}: already exists ({target})"); return; }
+            if (File.Exists(target) && !overwrite) { SkipExisting(c, src, target, false, res); return; }
             Directory.CreateDirectory(targetDir);
             File.Copy(src, target, true);
             res.Installed.Add($"{c.Kind} {c.Name} → {target}");
@@ -156,7 +203,7 @@ namespace AgentsPluginsPackageManager.Services
             JObject doc = new JObject();
             if (File.Exists(layout.McpFile))
             {
-                try { doc = JObject.Parse(File.ReadAllText(layout.McpFile)); }
+                try { doc = Json.ParseObject(File.ReadAllText(layout.McpFile)) ?? throw new JsonException("not an object"); }
                 catch (Exception ex)
                 {
                     foreach (var s in servers) res.Skipped.Add($"{s.Name}: cannot parse existing {layout.McpFile} ({ex.Message}); left untouched");
@@ -295,7 +342,7 @@ namespace AgentsPluginsPackageManager.Services
                 {
                     if (File.Exists(layout.McpFile))
                     {
-                        var doc = JObject.Parse(File.ReadAllText(layout.McpFile));
+                        var doc = Json.ParseObject(File.ReadAllText(layout.McpFile)) ?? throw new JsonException("not an object");
                         var section = doc[layout.McpSection] as JObject;
                         bool changed = false;
                         foreach (var m in mcp)

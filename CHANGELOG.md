@@ -3,6 +3,21 @@
 All notable changes to Agent Plugin Manager are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-11-12
+
+### Added
+- **Shared install records.** Installs are now recorded in `plugin-lock.json` at the destination (`~/.agents/` for user folders, `<repo>/.agents/` for a repository) instead of a per-tool file. The Visual Studio and VS Code editions read and write the same file, so each sees what the other installed, updated or removed. The repository file is meant to be committed. Format: [docs/plugin-lock.md](docs/plugin-lock.md).
+- **Present but not tracked.** Items that exist at a destination without a lock entry (installed by hand or by another tool) are marked **PRESENT**, or **PRESENT · DIFFERS** when their content differs from the package. A **Track them** button records them so they can be updated or uninstalled; items that differ are recorded without a version so the next update replaces them.
+- Installing over an identical item that is already there now tracks it instead of skipping it. A modified item is skipped with an explanation.
+- The installed banner shows which tool last changed the install; the install bar shows the lock file path.
+- Source identity by address: the same repository added in both editions (or typed as `owner/repo` and as a full URL) is recognised as one source.
+- Test project `tests/CoreTests` and shared test vectors (`shared/`) that both editions run, including a lock file that round-trips byte for byte.
+
+### Changed
+- Records from earlier versions (`%LOCALAPPDATA%\AgentsPluginsPackageManager\installed.json`) are migrated into the lock files on first run. The old file is kept as `installed.json.migrated`.
+- JSON in `mcp.json` is read without reinterpreting date-like strings, so installed MCP entries keep their exact values.
+- Content fingerprints use a defined, cross-edition algorithm (unversioned packages are re-evaluated once after upgrading).
+
 ## [1.0.2] - 2026-11-11
 
 First public release.
@@ -20,4 +35,5 @@ First public release.
 - **Theming:** WinUI-style interface that follows the Visual Studio theme (light, dark, blue, high contrast).
 - Extension icon, preview image and Tools menu icon.
 
+[1.1.0]: https://github.com/DimitarCC/agents-plugin-manager/releases/tag/v1.1.0
 [1.0.2]: https://github.com/DimitarCC/agents-plugin-manager/releases/tag/v1.0.2

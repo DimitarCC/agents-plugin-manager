@@ -81,11 +81,19 @@ namespace AgentsPluginsPackageManager.Models
         public string Name { get; set; } = "";
     }
 
-    /// <summary>What was installed from a package, where, and at which version.</summary>
+    /// <summary>
+    /// What was installed from a package, where, and at which version.
+    /// Persisted in <c>&lt;scope root&gt;/.agents/plugin-lock.json</c> (see docs/plugin-lock.md), shared with the VS Code edition.
+    /// Scope and RepoRoot come from which lock file the record was read from; they are not stored inside it.
+    /// </summary>
     public sealed class InstallRecord
     {
         public string PackageName { get; set; } = "";
-        public string SourceId { get; set; } = "";
+        /// <summary>Source key (see SourceKey): identifies the repository regardless of how it was entered.</summary>
+        public string SourceKey { get; set; } = "";
+        public string SourceKind { get; set; } = "git";
+        public string SourceLocation { get; set; } = "";
+        public string Ref { get; set; } = "";
         public string Version { get; set; } = "";
         /// <summary>Content hash of the installed components; detects changes when a package has no version.</summary>
         public string Fingerprint { get; set; } = "";
@@ -93,16 +101,31 @@ namespace AgentsPluginsPackageManager.Models
         public string? RepoRoot { get; set; }
         public ClientLayout Layout { get; set; }
         public List<InstalledComponent> Components { get; set; } = new List<InstalledComponent>();
-        public DateTime InstalledUtc { get; set; } = DateTime.UtcNow;
+        public string InstalledUtc { get; set; } = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'");
+        /// <summary>"&lt;tool&gt; &lt;version&gt;" of the last writer.</summary>
+        public string InstalledBy { get; set; } = "";
 
         [JsonIgnore]
-        public string Key => MakeKey(SourceId, PackageName, Scope, RepoRoot, Layout);
+        public string Key => MakeKey(SourceKey, PackageName, Scope, RepoRoot, Layout);
 
-        public static string MakeKey(string sourceId, string packageName, InstallScope scope, string? repoRoot, ClientLayout layout) =>
-            string.Join("|", sourceId, packageName, scope, scope == InstallScope.Repository ? repoRoot ?? "" : "", layout);
+        public static string MakeKey(string sourceKey, string packageName, InstallScope scope, string? repoRoot, ClientLayout layout) =>
+            string.Join("|", sourceKey, packageName.ToLowerInvariant(), scope == InstallScope.User ? "user" : "repo",
+                scope == InstallScope.Repository ? (repoRoot ?? "").ToLowerInvariant() : "", LayoutName(layout));
+
+        public static string LayoutName(ClientLayout l) => l == ClientLayout.Claude ? "claude" : l == ClientLayout.AgentsNeutral ? "agents" : "copilot";
 
         [JsonIgnore]
-        public string Where => (Scope == InstallScope.User ? "User" : "Repo") + " · " + Layout;
+        public string Where => (Scope == InstallScope.User ? "User" : "Repo") + " · " +
+            (Layout == ClientLayout.Claude ? "Claude" : Layout == ClientLayout.AgentsNeutral ? "Agents" : "Copilot");
+    }
+
+    /// <summary>Identifies the source a record or install belongs to.</summary>
+    public sealed class SourceInfo
+    {
+        public string Key { get; set; } = "";
+        public string Kind { get; set; } = "git";
+        public string Location { get; set; } = "";
+        public string Ref { get; set; } = "";
     }
 
     /// <summary>One installable (or informational) item inside a plugin package.</summary>
@@ -159,6 +182,28 @@ namespace AgentsPluginsPackageManager.Models
             get => _isInstalledHere;
             set { if (_isInstalledHere != value) { _isInstalledHere = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsInstalledHere))); } }
         }
+
+        private string _presence = "";
+
+        /// <summary>
+        /// For items not tracked at the current destination: "same" / "differs" (present, content identical / different),
+        /// "present" (MCP server). Empty when absent or tracked.
+        /// </summary>
+        public string Presence
+        {
+            get => _presence;
+            set
+            {
+                if (_presence == value) return;
+                _presence = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Presence)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasPresence)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PresenceLabel)));
+            }
+        }
+
+        public bool HasPresence => _presence.Length > 0;
+        public string PresenceLabel => _presence == "differs" ? "PRESENT · DIFFERS" : "PRESENT";
 
         public bool IsSelected
         {

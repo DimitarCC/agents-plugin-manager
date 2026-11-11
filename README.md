@@ -10,6 +10,10 @@ This repository contains two editions with the same features and layout:
 - **Visual Studio 2026** (`AgentsPluginsPackageManager/`): a VSIX built with the Visual Studio SDK.
 - **VS Code** (`vscode/`): a TypeScript extension that shows the same UI in an editor tab. See [vscode/README.md](vscode/README.md).
 
+Both editions share one install record per destination: `.agents/plugin-lock.json` in your home folder (user folders) or in the
+repository (commit it). See [docs/plugin-lock.md](docs/plugin-lock.md). Items already at a destination without a lock entry
+are shown as **PRESENT** (identical or different) and can be tracked with one click.
+
 ## Sources
 A source is a git repository (or local folder) containing one or more plugin packages
 (a folder with `plugin.json`, `skills/<name>/SKILL.md`, `mcp.json`; `agents/`, `prompts/` and `commands/`
@@ -36,7 +40,7 @@ MCP servers are opt-in (unticked by default), merged into the existing JSON (a `
 and `${PLUGIN_ROOT}` / `${PLUGIN_DATA}` are expanded per the spec.
 
 ## Updates
-Every install is recorded (`%LOCALAPPDATA%\AgentsPluginsPackageManager\installed.json`: package, version, target, items).
+Every install is recorded in the destination's `.agents/plugin-lock.json` (package, version, source, items).
 On each source refresh the manager compares the installed version with the source:
 - Packages show **Installed vX** and an **Update: vA → vB** badge; the detail pane has an **Update** button and the
   source bar has **Update all (N)**.

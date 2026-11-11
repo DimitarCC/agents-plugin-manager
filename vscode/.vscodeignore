@@ -4,8 +4,13 @@ test/**
 hosttest/**
 out/test/**
 out/hosttest/**
+obj/**
+bin/**
 **/*.ts
 **/*.map
+uitest/**
+**/*.esproj
+**/*.vsix
 tsconfig.json
 node_modules/**
 package-lock.json

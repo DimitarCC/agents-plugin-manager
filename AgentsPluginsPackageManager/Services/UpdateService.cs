@@ -2,13 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentsPluginsPackageManager.Models;
-using Newtonsoft.Json;
 
 namespace AgentsPluginsPackageManager.Services
 {
@@ -22,53 +19,13 @@ namespace AgentsPluginsPackageManager.Services
         public string ToVersion => string.IsNullOrEmpty(Package.Version) ? "new content" : "v" + Package.Version;
     }
 
-    /// <summary>Persists which packages were installed where, so updates can be detected and re-applied.</summary>
-    public static class InstallStore
+    /// <summary>An item that exists at a destination but is not listed in any lock entry.</summary>
+    public sealed class PresenceItem
     {
-        private static readonly object Gate = new object();
-        private static string FilePath => Path.Combine(SettingsStore.DataRoot, "installed.json");
-
-        public static List<InstallRecord> Load()
-        {
-            lock (Gate)
-            {
-                try
-                {
-                    if (File.Exists(FilePath))
-                        return JsonConvert.DeserializeObject<List<InstallRecord>>(File.ReadAllText(FilePath)) ?? new List<InstallRecord>();
-                }
-                catch { }
-                return new List<InstallRecord>();
-            }
-        }
-
-        /// <summary>Forgets removed items; deletes the whole record when nothing is left.</summary>
-        public static void RemoveComponents(string key, IEnumerable<InstalledComponent> removed)
-        {
-            lock (Gate)
-            {
-                var all = Load();
-                var rec = all.FirstOrDefault(r => r.Key == key);
-                if (rec == null) return;
-                var gone = removed.ToList();
-                rec.Components.RemoveAll(c => gone.Any(g => g.Kind == c.Kind && string.Equals(g.Name, c.Name, StringComparison.OrdinalIgnoreCase)));
-                if (rec.Components.Count == 0) all.RemoveAll(r => r.Key == key);
-                Directory.CreateDirectory(SettingsStore.DataRoot);
-                File.WriteAllText(FilePath, JsonConvert.SerializeObject(all, Formatting.Indented));
-            }
-        }
-
-        public static void Upsert(InstallRecord record)
-        {
-            lock (Gate)
-            {
-                var all = Load();
-                all.RemoveAll(r => r.Key == record.Key);
-                all.Add(record);
-                Directory.CreateDirectory(SettingsStore.DataRoot);
-                File.WriteAllText(FilePath, JsonConvert.SerializeObject(all, Formatting.Indented));
-            }
-        }
+        public ComponentKind Kind { get; set; }
+        public string Name { get; set; } = "";
+        /// <summary>"same", "differs" or "present" (MCP server).</summary>
+        public string State { get; set; } = "";
     }
 
     public static class UpdateService
@@ -100,42 +57,42 @@ namespace AgentsPluginsPackageManager.Services
             return Version.TryParse(text, out v);
         }
 
-        /// <summary>Finds updates for installed records belonging to <paramref name="sourceId"/>.</summary>
-        public static List<UpdateInfo> FindUpdates(IEnumerable<PluginPackage> packages, string sourceId, IEnumerable<InstallRecord> records)
+        private static List<PluginComponent> Matching(PluginPackage pkg, InstallRecord r) =>
+            pkg.Components.Where(c => c.Installable &&
+                r.Components.Any(ic => ic.Kind == c.Kind && string.Equals(ic.Name, c.Name, StringComparison.OrdinalIgnoreCase))).ToList();
+
+        /// <summary>Finds updates for installed records belonging to the given source (by source key).</summary>
+        public static List<UpdateInfo> FindUpdates(IEnumerable<PluginPackage> packages, string sourceKey, IEnumerable<InstallRecord> records)
         {
             var result = new List<UpdateInfo>();
             var byName = packages.GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-            foreach (var r in records.Where(r => r.SourceId == sourceId))
+            foreach (var r in records.Where(r => r.SourceKey == sourceKey))
             {
                 if (!byName.TryGetValue(r.PackageName, out var pkg)) continue;
                 var comps = Matching(pkg, r);
                 if (comps.Count == 0) continue;
-                if (IsUpdateAvailable(r, pkg, Fingerprint(pkg, comps)))
+                if (IsUpdateAvailable(r, pkg, ContentHash.Fingerprint(pkg, comps)))
                     result.Add(new UpdateInfo { Record = r, Package = pkg, Components = comps });
             }
             return result;
         }
 
         /// <summary>Applies per-package install state (installed / update available) to the list shown in the UI.</summary>
-        public static void Annotate(IEnumerable<PluginPackage> packages, string sourceId, IEnumerable<InstallRecord> records)
+        public static void Annotate(IEnumerable<PluginPackage> packages, string sourceKey, IEnumerable<InstallRecord> records)
         {
-            var recs = records.Where(r => r.SourceId == sourceId).ToList();
-            var updates = FindUpdates(packages, sourceId, recs);
-            foreach (var p in packages)
+            var recs = records.Where(r => r.SourceKey == sourceKey).ToList();
+            var pkgs = packages.ToList();
+            var updates = FindUpdates(pkgs, sourceKey, recs);
+            foreach (var p in pkgs)
             {
                 var mine = recs.Where(r => string.Equals(r.PackageName, p.Name, StringComparison.OrdinalIgnoreCase)).ToList();
                 if (mine.Count == 0) { p.SetInstallState("", false, ""); continue; }
                 var summary = "Installed " + string.Join(", ", mine.Select(r =>
                     (string.IsNullOrEmpty(r.Version) ? "" : "v" + r.Version + " ") + "(" + r.Where + ")"));
                 var ups = updates.Where(u => ReferenceEquals(u.Package, p)).ToList();
-                p.SetInstallState(summary, ups.Count > 0,
-                    ups.Count == 0 ? "" : ups[0].FromVersion + " → " + ups[0].ToVersion);
+                p.SetInstallState(summary, ups.Count > 0, ups.Count == 0 ? "" : ups[0].FromVersion + " → " + ups[0].ToVersion);
             }
         }
-
-        private static List<PluginComponent> Matching(PluginPackage pkg, InstallRecord r) =>
-            pkg.Components.Where(c => c.Installable &&
-                r.Components.Any(ic => ic.Kind == c.Kind && string.Equals(ic.Name, c.Name, StringComparison.OrdinalIgnoreCase))).ToList();
 
         // ───────── applying ─────────
 
@@ -154,57 +111,72 @@ namespace AgentsPluginsPackageManager.Services
                 RepoRoot = r.RepoRoot,
                 Overwrite = true,
             });
-            Record(u.Package, r.SourceId, r.Scope, r.RepoRoot, r.Layout, res.InstalledComponents, replace: true);
+            Record(u.Package, new SourceInfo { Key = r.SourceKey, Kind = r.SourceKind, Location = r.SourceLocation, Ref = r.Ref },
+                r.Scope, r.RepoRoot, r.Layout, res.InstalledComponents, replace: true);
             return res;
         }
 
         /// <summary>Remembers an install. Merges with earlier installs of the same package/target unless replacing.</summary>
-        public static void Record(PluginPackage pkg, string sourceId, InstallScope scope, string? repoRoot, ClientLayout layout,
+        public static void Record(PluginPackage pkg, SourceInfo source, InstallScope scope, string? repoRoot, ClientLayout layout,
             IEnumerable<PluginComponent> installed, bool replace = false)
         {
-            var rec = new InstallRecord
-            {
-                PackageName = pkg.Name, SourceId = sourceId, Scope = scope,
-                RepoRoot = scope == InstallScope.Repository ? repoRoot : null, Layout = layout,
-            };
-            var existing = InstallStore.Load().FirstOrDefault(r => r.Key == rec.Key);
-            var items = new List<InstalledComponent>();
-            if (existing != null && !replace) items.AddRange(existing.Components);
+            var key = InstallRecord.MakeKey(source.Key, pkg.Name, scope, repoRoot, layout);
+            var existing = LockStore.Load(scope, repoRoot).FirstOrDefault(r => r.Key == key);
+            var items = existing != null && !replace ? existing.Components.ToList() : new List<InstalledComponent>();
             foreach (var c in installed)
                 if (!items.Any(i => i.Kind == c.Kind && string.Equals(i.Name, c.Name, StringComparison.OrdinalIgnoreCase)))
                     items.Add(new InstalledComponent { Kind = c.Kind, Name = c.Name });
             if (items.Count == 0) return;
-            rec.Components = items;
-            rec.Version = pkg.Version ?? "";
-            rec.Fingerprint = Fingerprint(pkg, Matching(pkg, rec));
-            InstallStore.Upsert(rec);
+            var rec = new InstallRecord
+            {
+                PackageName = pkg.Name, SourceKey = source.Key, SourceKind = source.Kind, SourceLocation = source.Location, Ref = source.Ref,
+                Scope = scope, RepoRoot = scope == InstallScope.Repository ? repoRoot : null, Layout = layout,
+                Components = items, Version = pkg.Version ?? "", InstalledBy = SettingsStore.ToolName,
+            };
+            rec.Fingerprint = ContentHash.Fingerprint(pkg, Matching(pkg, rec));
+            LockStore.Upsert(rec);
         }
 
-        // ───────── fingerprint ─────────
+        // ───────── items that exist but are not tracked ─────────
 
-        public static string Fingerprint(PluginPackage pkg, IEnumerable<PluginComponent> components)
+        /// <summary>Items of the package that exist at the destination but are not listed in <paramref name="tracked"/>.</summary>
+        public static List<PresenceItem> UntrackedPresence(PluginPackage pkg, InstallRecord? tracked, InstallScope scope, ClientLayout layout, string? repoRoot)
         {
-            using (var sha = SHA1.Create())
+            var found = new List<PresenceItem>();
+            foreach (var c in pkg.Components)
             {
-                var sb = new StringBuilder();
-                foreach (var c in components.OrderBy(c => c.Kind).ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
-                {
-                    sb.Append(c.Kind).Append(':').Append(c.Name).Append('\n');
-                    if (c.Kind == ComponentKind.McpServer) { sb.Append(c.McpDefinition?.ToString(Formatting.None)).Append('\n'); continue; }
-                    var path = Path.Combine(pkg.RootPath, c.RelativePath.Replace('/', Path.DirectorySeparatorChar));
-                    IEnumerable<string> files = c.IsDirectory && Directory.Exists(path)
-                        ? Directory.GetFiles(path, "*", SearchOption.AllDirectories).OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
-                        : File.Exists(path) ? new[] { path } : Enumerable.Empty<string>();
-                    foreach (var f in files)
-                    {
-                        sb.Append(f.Substring(path.Length)).Append(':');
-                        // normalise line endings so CRLF/LF checkouts hash the same
-                        var text = File.ReadAllBytes(f);
-                        sb.Append(Convert.ToBase64String(sha.ComputeHash(text.Where(b => b != 13).ToArray()))).Append('\n');
-                    }
-                }
-                return Convert.ToBase64String(sha.ComputeHash(Encoding.UTF8.GetBytes(sb.ToString())));
+                if (!c.Installable) continue;
+                if (tracked != null && tracked.Components.Any(t => t.Kind == c.Kind && string.Equals(t.Name, c.Name, StringComparison.OrdinalIgnoreCase))) continue;
+                var state = PluginInstaller.PresenceOf(pkg, c, scope, layout, repoRoot);
+                if (state.Length > 0) found.Add(new PresenceItem { Kind = c.Kind, Name = c.Name, State = state });
             }
+            return found;
+        }
+
+        /// <summary>
+        /// Starts tracking untracked items. Identical items get the package version; items that differ are recorded with an
+        /// empty version when the record is new, so the next update replaces them.
+        /// </summary>
+        public static int TrackPresent(PluginPackage pkg, SourceInfo source, InstallScope scope, string? repoRoot, ClientLayout layout)
+        {
+            var key = InstallRecord.MakeKey(source.Key, pkg.Name, scope, repoRoot, layout);
+            var existing = LockStore.Load(scope, repoRoot).FirstOrDefault(r => r.Key == key);
+            var found = UntrackedPresence(pkg, existing, scope, layout, repoRoot);
+            if (found.Count == 0) return 0;
+
+            var anyDiffers = found.Any(f => f.State == "differs");
+            var rec = existing ?? new InstallRecord
+            {
+                PackageName = pkg.Name, SourceKey = source.Key, SourceKind = source.Kind, SourceLocation = source.Location, Ref = source.Ref,
+                Scope = scope, RepoRoot = scope == InstallScope.Repository ? repoRoot : null, Layout = layout,
+                Version = anyDiffers ? "" : pkg.Version ?? "",
+            };
+            rec.Components.AddRange(found.Select(f => new InstalledComponent { Kind = f.Kind, Name = f.Name }));
+            rec.InstalledBy = SettingsStore.ToolName;
+            rec.InstalledUtc = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'");
+            if (existing == null) rec.Fingerprint = anyDiffers ? "" : ContentHash.Fingerprint(pkg, Matching(pkg, rec));
+            LockStore.Upsert(rec);
+            return found.Count;
         }
 
         // ───────── background run (VS startup) ─────────
@@ -213,14 +185,15 @@ namespace AgentsPluginsPackageManager.Services
         public static async Task<List<string>> RunAutoUpdateAsync(Settings settings, CancellationToken ct)
         {
             var log = new List<string>();
-            var records = InstallStore.Load();
-            foreach (var src in settings.Sources.Where(s => records.Any(r => r.SourceId == s.Id)))
+            LockStore.MigrateLegacy(settings.Sources);
+            var records = LockStore.LoadAll(null);
+            foreach (var src in settings.Sources.Where(s => records.Any(r => r.SourceKey == SourceKey.Of(s))))
             {
                 try
                 {
                     var root = await SourceSync.SyncAsync(src, null, ct, interactive: false).ConfigureAwait(false);
                     var pkgs = PluginScanner.Discover(root);
-                    foreach (var u in FindUpdates(pkgs, src.Id, InstallStore.Load()))
+                    foreach (var u in FindUpdates(pkgs, SourceKey.Of(src), LockStore.LoadAll(null)))
                     {
                         try
                         {

@@ -1,5 +1,25 @@
 <Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="CHANGELOG.md" />
+    <File Path="LICENSE" />
+    <File Path="Marketplace/overview.md" />
+    <File Path="Marketplace/publishManifest.json" />
+    <File Path="nuget.config" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/Solution Items/docs/">
+    <File Path="docs/plugin-lock.md" />
+    <File Path="shared/test-vectors.json" />
+    <File Path="shared/fixtures/plugin-lock.sample.json" />
+  </Folder>
   <Project Path="AgentsPluginsPackageManager/AgentsPluginsPackageManager.csproj">
     <Deploy />
+  </Project>
+  <Project Path="tests/CoreTests/CoreTests.csproj" />
+  <Project Path="vscode/AgentPluginManager.VSCode.esproj">
+    <BuildType Solution="Debug|*" Project="Debug" />
+    <BuildType Solution="Release|*" Project="Release" />
+    <Platform Solution="*|Any CPU" Project="AnyCPU" />
+    <Build Solution="*|*" Project="true" />
   </Project>
 </Solution>

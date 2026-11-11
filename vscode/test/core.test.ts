@@ -5,14 +5,21 @@ import * as os from 'os';
 import * as path from 'path';
 import { test, before, after } from 'node:test';
 import { parseFrontMatter } from '../src/core/frontmatter';
+import { canonicalJson } from '../src/core/hash';
 import { install, resolveLayout, uninstall, InstallEnv } from '../src/core/installer';
+import { LockStore } from '../src/core/lockstore';
 import { Host, Manager } from '../src/core/manager';
 import { discover } from '../src/core/scanner';
-import { RecordStore, annotate, applyUpdate, findUpdates, isUpdateAvailable, recordInstall } from '../src/core/updates';
-import { keyOf } from '../src/core/types';
+import { sourceKey } from '../src/core/sourcekey';
+import {
+  annotate, applyUpdate, findUpdates, fingerprint, isUpdateAvailable, recordInstall, sourceInfoOf, trackPresent, untrackedPresence,
+} from '../src/core/updates';
+import { InstallRecord, PluginComponent, PluginPackage, PluginSource, keyOf } from '../src/core/types';
 
 let tmp: string;
-let examples: string;   // git repo with 3 plugins, tags v1.3.0 and HEAD = 1.4.0
+let examples: string;   // git repo with 2 plugins, tag v1.3.0 and HEAD = 1.4.0
+const vectors = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'shared', 'test-vectors.json'), 'utf8'));
+const sharedRoot = path.join(__dirname, '..', '..', '..', 'shared');
 
 function write(file: string, text: string): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -72,6 +79,41 @@ function envFor(root: string): InstallEnv {
   return { home: path.join(root, 'home'), userDir: path.join(root, 'userdir'), userPayloadRoot: path.join(root, 'payload') };
 }
 
+const SRC: PluginSource = { id: 'src1', name: 'ex', kind: 'git', location: 'https://github.com/Owner/Repo.git', ref: '', auth: 'none' };
+
+// ───────── shared vectors (identical expectations in the Visual Studio edition) ─────────
+
+test('shared vectors: source keys', () => {
+  for (const v of vectors.sourceKeys) {
+    assert.strictEqual(sourceKey({ kind: v.kind, location: v.input }), v.key, `${v.kind} ${v.input}`);
+  }
+});
+
+test('shared vectors: canonical JSON', () => {
+  for (const v of vectors.canonicalJson) {
+    assert.strictEqual(canonicalJson(v.input), v.output);
+  }
+});
+
+function fixturePackage(): { pkg: PluginPackage; comps: PluginComponent[] } {
+  const f = vectors.fixture;
+  const comps: PluginComponent[] = f.components.map((c: any): PluginComponent => ({
+    kind: c.kind, name: c.name, description: '', relativePath: c.path ?? '', isDirectory: !!c.isDirectory, installable: true, preview: '', mcp: c.definition,
+  }));
+  const pkg: PluginPackage = {
+    name: 'sample', version: '1.0.0', description: '', author: '', homepage: '', license: '', keywords: [],
+    rootPath: path.join(sharedRoot, '..', f.folder), hasManifest: false, components: comps, warnings: [],
+  };
+  return { pkg, comps };
+}
+
+test('shared vectors: fingerprint of the sample plugin', () => {
+  const { pkg, comps } = fixturePackage();
+  assert.strictEqual(fingerprint(pkg, comps), vectors.fixture.fingerprint);
+  // order of components must not matter
+  assert.strictEqual(fingerprint(pkg, [...comps].reverse()), vectors.fixture.fingerprint);
+});
+
 // ───────── scanner ─────────
 
 test('front matter: plain, quoted and folded values', () => {
@@ -113,11 +155,20 @@ test('install and uninstall skills, agents, prompts into a repository (Copilot l
   assert.ok(fs.existsSync(path.join(root, '.github', 'prompts', 'explain-code.prompt.md')));
   assert.ok(!fs.existsSync(path.join(root, '.github', 'skills', 'commit-message')), 'unselected items are not installed');
 
+  // identical items already there: tracked again instead of skipped
   const again = install({ pkg: crk, components: pick, scope: 'repo', layout: 'copilot', repoRoot: root, overwrite: false, env });
-  assert.strictEqual(again.skipped.length, 3, 'existing items are skipped without overwrite');
+  assert.strictEqual(again.skipped.length, 0);
+  assert.strictEqual(again.installedComponents.length, 3);
+  assert.ok(again.installed[0].includes('already up to date'));
 
-  const rec = { packageName: crk.name, sourceId: 's', version: '', fingerprint: '', scope: 'repo' as const, repoRoot: root, layout: 'copilot' as const, installedUtc: '',
-    components: res.installedComponents.map(c => ({ kind: c.kind, name: c.name })) };
+  // a modified item is skipped, with an explanation
+  fs.appendFileSync(path.join(root, '.github', 'agents', 'reviewer.agent.md'), 'local edit\n');
+  const third = install({ pkg: crk, components: pick, scope: 'repo', layout: 'copilot', repoRoot: root, overwrite: false, env });
+  assert.strictEqual(third.skipped.length, 1);
+  assert.ok(third.skipped[0].includes('differs'));
+
+  const rec = { packageName: crk.name, sourceKey: 's', sourceKind: 'git', sourceLocation: '', ref: '', version: '', fingerprint: '', scope: 'repo' as const, repoRoot: root, layout: 'copilot' as const, installedUtc: '', installedBy: '',
+    components: res.installedComponents.map(c => ({ kind: c.kind, name: c.name })) } as InstallRecord;
   const un = uninstall(rec, rec.components, env);
   assert.strictEqual(un.removedComponents.length, 3);
   assert.ok(!fs.existsSync(path.join(root, '.github', 'skills', 'review-checklist')));
@@ -138,8 +189,8 @@ test('MCP servers: type mapping, payload copy, placeholder expansion, uninstall 
   assert.ok(path.isAbsolute(echo.command) && fs.existsSync(echo.command), 'bundled script copied and path resolved');
   assert.ok(!JSON.stringify(echo).includes('${PLUGIN_DATA}'));
 
-  const rec = { packageName: 'mcp-demo', sourceId: 's', version: '', fingerprint: '', scope: 'repo' as const, repoRoot: root, layout: 'copilot' as const, installedUtc: '',
-    components: res.installedComponents.map(c => ({ kind: c.kind, name: c.name })) };
+  const rec = { packageName: 'mcp-demo', sourceKey: 's', sourceKind: 'git', sourceLocation: '', ref: '', version: '', fingerprint: '', scope: 'repo' as const, repoRoot: root, layout: 'copilot' as const, installedUtc: '', installedBy: '',
+    components: res.installedComponents.map(c => ({ kind: c.kind, name: c.name })) } as InstallRecord;
   uninstall(rec, rec.components.filter(c => c.name === 'remote-demo'), env);
   assert.ok(fs.existsSync(echo.command), 'payload kept while another server remains');
   rec.components = rec.components.filter(c => c.name !== 'remote-demo');
@@ -171,6 +222,101 @@ test('layout paths for each client', () => {
   assert.strictEqual(neutral.agentsDir, undefined);
 });
 
+// ───────── lock file ─────────
+
+test('lock file: location, format, ordering, LF endings, deleted when empty', () => {
+  const home = path.join(tmp, 'lock-home');
+  const repo = path.join(tmp, 'lock-repo');
+  fs.mkdirSync(repo, { recursive: true });
+  const lock = new LockStore(home, path.join(tmp, 'lock-data'), 'vscode 9.9.9');
+  const base = { sourceKey: 'github.com/o/r', sourceKind: 'git' as const, sourceLocation: 'o/r', ref: '', version: '1.0.0', fingerprint: 'fp', installedUtc: '2026-01-01T00:00:00.000Z', installedBy: 'vscode 9.9.9' };
+  lock.upsert({ ...base, packageName: 'zeta', scope: 'repo', repoRoot: repo, layout: 'copilot', components: [{ kind: 'skill', name: 'a' }] });
+  lock.upsert({ ...base, packageName: 'alpha', scope: 'repo', repoRoot: repo, layout: 'claude', components: [{ kind: 'agent', name: 'b' }] });
+  lock.upsert({ ...base, packageName: 'alpha', scope: 'repo', repoRoot: repo, layout: 'copilot', components: [{ kind: 'mcp', name: 'm' }] });
+  const file = path.join(repo, '.agents', 'plugin-lock.json');
+  const text = fs.readFileSync(file, 'utf8');
+  assert.ok(!text.includes('\r'), 'LF line endings');
+  assert.ok(text.endsWith('}\n'));
+  const doc = JSON.parse(text);
+  assert.strictEqual(doc.version, 1);
+  assert.deepStrictEqual(doc.installs.map((i: any) => i.package + '/' + i.layout), ['alpha/claude', 'alpha/copilot', 'zeta/copilot']);
+  assert.deepStrictEqual(Object.keys(doc.installs[0]), ['package', 'source', 'sourceKind', 'sourceLocation', 'ref', 'version', 'fingerprint', 'layout', 'components', 'installedAt', 'installedBy']);
+
+  lock.upsert({ ...base, packageName: 'user-pkg', scope: 'user', layout: 'agents', components: [{ kind: 'skill', name: 's' }] });
+  assert.ok(fs.existsSync(path.join(home, '.agents', 'plugin-lock.json')), 'user scope lives under ~/.agents');
+
+  for (const r of lock.load('repo', repo)) { lock.removeComponents(r, r.components); }
+  assert.ok(!fs.existsSync(file), 'file removed when the last entry goes');
+});
+
+test('lock file: the shared golden file (written by TypeScript, also tested by C#) round-trips byte for byte', () => {
+  const golden = fs.readFileSync(path.join(sharedRoot, 'fixtures', 'plugin-lock.sample.json'), 'utf8').replace(/\r\n/g, '\n');
+  const repo = path.join(tmp, 'golden-repo');
+  write(path.join(repo, '.agents', 'plugin-lock.json'), golden);
+  const lock = new LockStore(path.join(tmp, 'golden-home'), path.join(tmp, 'golden-data'), 'vscode 1.1.0');
+  const records = lock.load('repo', repo);
+  assert.strictEqual(records.length, 3);
+  assert.strictEqual(records[2].sourceLocation, 'E:\\Plugins\\café');
+  assert.strictEqual(records[2].components[0].kind, 'mcp');
+  lock.upsert(records[0]);   // rewrite an unchanged record: the file must not change
+  assert.strictEqual(fs.readFileSync(path.join(repo, '.agents', 'plugin-lock.json'), 'utf8'), golden);
+});
+
+test('lock file: another edition (different data folder and tool) sees and updates the same records', () => {
+  const home = path.join(tmp, 'share-home');
+  const repo = path.join(tmp, 'share-repo');
+  fs.mkdirSync(repo, { recursive: true });
+  const env = { ...envFor(tmp), home };
+  const lockVs = new LockStore(home, path.join(tmp, 'vs-data'), 'visual-studio 1.1.0');
+  const lockCode = new LockStore(home, path.join(tmp, 'code-data'), 'vscode 1.1.0');
+
+  const old = path.join(tmp, 'share-checkout');
+  git(tmp, 'clone', '-q', '--branch', 'v1.3.0', examples, old);
+  const oldPkg = discover(old).find(p => p.name === 'code-review-kit')!;
+  const info = sourceInfoOf({ ...SRC, kind: 'local', location: examples });
+  const res = install({ pkg: oldPkg, components: oldPkg.components.filter(c => c.name === 'reviewer'), scope: 'repo', layout: 'copilot', repoRoot: repo, overwrite: false, env });
+  recordInstall(lockVs, oldPkg, info, 'repo', repo, 'copilot', res.installedComponents);   // "Visual Studio" installs
+
+  const seen = lockCode.loadAll(repo);                                                        // "VS Code" looks
+  assert.strictEqual(seen.length, 1);
+  assert.strictEqual(seen[0].installedBy, 'visual-studio 1.1.0');
+  assert.strictEqual(seen[0].version, '1.3.0');
+
+  const newPkgs = discover(examples);
+  const ups = findUpdates(newPkgs, info.key, seen);
+  assert.strictEqual(ups.length, 1);
+  applyUpdate(ups[0], lockCode, env);                                                         // "VS Code" updates
+
+  const after = lockVs.loadAll(repo);                                                         // "Visual Studio" looks again
+  assert.strictEqual(after[0].version, '1.4.0');
+  assert.strictEqual(after[0].installedBy, 'vscode 1.1.0');
+  assert.strictEqual(findUpdates(newPkgs, info.key, after).length, 0, 'no stale update offered to the other edition');
+});
+
+test('lock file: records are matched by source key, not by how the source was typed', () => {
+  const a = sourceKey({ kind: 'git', location: 'https://github.com/Owner/Repo.git' });
+  const b = sourceKey({ kind: 'git', location: 'owner/repo' });
+  assert.strictEqual(a, b);
+});
+
+test('lock file: legacy per-tool records are migrated once', () => {
+  const home = path.join(tmp, 'mig-home');
+  const repo = path.join(tmp, 'mig-repo');
+  const data = path.join(tmp, 'mig-data');
+  fs.mkdirSync(repo, { recursive: true });
+  write(path.join(data, 'installed.json'), JSON.stringify([
+    { packageName: 'p', sourceId: 'src1', version: '2.0.0', fingerprint: 'f', scope: 'repo', repoRoot: repo, layout: 'claude', components: [{ kind: 'skill', name: 's' }], installedUtc: '2026-01-01T00:00:00.000Z' },
+    { packageName: 'u', sourceId: 'src1', version: '1.0.0', fingerprint: 'f', scope: 'user', layout: 'copilot', components: [{ kind: 'agent', name: 'a' }], installedUtc: '2026-01-02T00:00:00.000Z' },
+    { packageName: 'orphan', sourceId: 'unknown', version: '1', fingerprint: '', scope: 'user', layout: 'copilot', components: [{ kind: 'skill', name: 'x' }], installedUtc: '' },
+  ]));
+  const lock = new LockStore(home, data, 'vscode 1.1.0');
+  assert.strictEqual(lock.migrateLegacy([SRC]), 2);
+  assert.strictEqual(lock.load('repo', repo)[0].sourceKey, 'github.com/owner/repo');
+  assert.strictEqual(lock.load('user')[0].packageName, 'u');
+  assert.ok(fs.existsSync(path.join(data, 'installed.json.migrated')) && !fs.existsSync(path.join(data, 'installed.json')));
+  assert.strictEqual(lock.migrateLegacy([SRC]), 0, 'second run does nothing');
+});
+
 // ───────── updates ─────────
 
 test('version comparison is numeric', () => {
@@ -179,47 +325,89 @@ test('version comparison is numeric', () => {
   assert.ok(up('1.0', '1.0.1'));
   assert.ok(!up('1.4.0', '1.4.0'));
   assert.ok(!up('2.0.0', '1.9.9'));
+  assert.ok(up('', '1.0.0'), 'unknown installed version is offered the update');
 });
 
-test('update flow: detect, apply only installed items, do not add new ones', async () => {
-  const dataRoot = path.join(tmp, 'data-upd');
-  const store = new RecordStore(dataRoot);
+test('update flow: detect, apply only installed items, do not add new ones', () => {
   const root = path.join(tmp, 'repo4');
   fs.mkdirSync(root, { recursive: true });
-  const env = envFor(root);
+  const env = { ...envFor(root), home: path.join(root, 'home') };
+  const lock = new LockStore(env.home, path.join(tmp, 'data-upd'), 'vscode 1.1.0');
+  const info = sourceInfoOf({ ...SRC, kind: 'local', location: examples });
 
-  // install 1.3.0 (checkout of the tag)
   const old = path.join(tmp, 'checkout-1.3.0');
   git(tmp, 'clone', '-q', '--branch', 'v1.3.0', examples, old);
   const oldPkg = discover(old).find(p => p.name === 'code-review-kit')!;
   const res = install({ pkg: oldPkg, components: oldPkg.components.filter(c => c.name === 'reviewer' || c.name === 'review-checklist'), scope: 'repo', layout: 'copilot', repoRoot: root, overwrite: false, env });
-  recordInstall(store, oldPkg, 'src1', 'repo', root, 'copilot', res.installedComponents);
-  assert.strictEqual(store.load()[0].version, '1.3.0');
+  recordInstall(lock, oldPkg, info, 'repo', root, 'copilot', res.installedComponents);
+  assert.strictEqual(lock.load('repo', root)[0].version, '1.3.0');
 
   const newPkgs = discover(examples);
-  const updates = findUpdates(newPkgs, 'src1', store.load());
+  const updates = findUpdates(newPkgs, info.key, lock.load('repo', root));
   assert.strictEqual(updates.length, 1);
   assert.strictEqual(updates[0].fromVersion + ' → ' + updates[0].toVersion, 'v1.3.0 → v1.4.0');
   assert.strictEqual(updates[0].components.length, 2, 'only the installed items are targeted');
 
-  annotate(newPkgs, 'src1', store.load());
+  annotate(newPkgs, info.key, lock.load('repo', root));
   const crk = newPkgs.find(p => p.name === 'code-review-kit')!;
   assert.ok(crk.hasUpdate && crk.installedSummary!.startsWith('Installed v1.3.0'));
 
-  applyUpdate(updates[0], store, env);
+  applyUpdate(updates[0], lock, env);
   assert.ok(fs.readFileSync(path.join(root, '.github', 'agents', 'reviewer.agent.md'), 'utf8').includes('verdict'));
   assert.ok(!fs.existsSync(path.join(root, '.github', 'prompts', 'write-tests.prompt.md')), 'new upstream prompt is not auto-installed');
-  assert.strictEqual(store.load()[0].version, '1.4.0');
-  assert.strictEqual(findUpdates(newPkgs, 'src1', store.load()).length, 0);
+  assert.strictEqual(lock.load('repo', root)[0].version, '1.4.0');
+  assert.strictEqual(findUpdates(newPkgs, info.key, lock.load('repo', root)).length, 0);
+});
+
+// ───────── present but not tracked ─────────
+
+test('presence: untracked items are detected as identical / different / present, and can be tracked', () => {
+  const root = path.join(tmp, 'repo-presence');
+  fs.mkdirSync(root, { recursive: true });
+  const env = { ...envFor(root), home: path.join(root, 'home') };
+  const lock = new LockStore(env.home, path.join(tmp, 'data-presence'), 'visual-studio 1.1.0');
+  const pkgs = discover(examples);
+  const crk = pkgs.find(p => p.name === 'code-review-kit')!;
+  const info = sourceInfoOf({ ...SRC, kind: 'local', location: examples });
+
+  // somebody copied things in by hand (or another tool without a lock file)
+  fs.cpSync(path.join(crk.rootPath, 'skills', 'review-checklist'), path.join(root, '.github', 'skills', 'review-checklist'), { recursive: true });
+  write(path.join(root, '.github', 'agents', 'reviewer.agent.md'), 'my own reviewer\n');
+
+  const found = untrackedPresence(crk, undefined, 'repo', 'copilot', root, env);
+  assert.deepStrictEqual(found.map(f => `${f.name}:${f.state}`).sort(), ['review-checklist:same', 'reviewer:differs']);
+  assert.ok(!found.some(f => f.name === 'commit-message'), 'absent items are not reported');
+
+  const n = trackPresent(lock, crk, info, 'repo', root, 'copilot', env);
+  assert.strictEqual(n, 2);
+  const rec = lock.load('repo', root)[0];
+  assert.strictEqual(rec.version, '', 'differing items are recorded without a version so the next update replaces them');
+  assert.strictEqual(rec.installedBy, 'visual-studio 1.1.0');
+  assert.strictEqual(untrackedPresence(crk, rec, 'repo', 'copilot', root, env).length, 0, 'tracked items are no longer "untracked"');
+
+  const ups = findUpdates(pkgs, info.key, lock.load('repo', root));
+  assert.strictEqual(ups.length, 1, 'update offered to bring the different item in line');
+  applyUpdate(ups[0], lock, env);
+  assert.ok(fs.readFileSync(path.join(root, '.github', 'agents', 'reviewer.agent.md'), 'utf8').includes('verdict'));
+  assert.strictEqual(lock.load('repo', root)[0].version, '1.4.0');
+});
+
+test('presence: MCP servers are reported as present', () => {
+  const root = path.join(tmp, 'repo-presence-mcp');
+  write(path.join(root, '.vscode', 'mcp.json'), JSON.stringify({ servers: { 'remote-demo': { type: 'http', url: 'x' } } }));
+  const mcp = discover(examples).find(p => p.name === 'mcp-demo')!;
+  const found = untrackedPresence(mcp, undefined, 'repo', 'copilot', root, envFor(root));
+  assert.deepStrictEqual(found.map(f => `${f.name}:${f.state}`), ['remote-demo:present']);
 });
 
 // ───────── manager (full flow with a fake host) ─────────
 
-function fakeHost(dataRoot: string, repo: string | undefined, answers: { confirm: boolean } = { confirm: true }): Host {
+function fakeHost(dataRoot: string, repo: string | undefined, home: string, tool: string, answers: { confirm: boolean } = { confirm: true }): Host {
   const tokens = new Map<string, string>();
   return {
     dataRoot,
-    env: envFor(dataRoot),
+    env: { ...envFor(dataRoot), home },
+    toolName: tool,
     confirm: async () => answers.confirm,
     pickFolder: async () => undefined,
     getWorkspaceFolder: () => repo,
@@ -233,23 +421,24 @@ test('manager: add git source at a tag, install, switch to HEAD, update, uninsta
   const dataRoot = path.join(tmp, 'data-mgr');
   const repo = path.join(tmp, 'repo5');
   fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
-  const m = new Manager(fakeHost(dataRoot, repo));
-  const logs: string[] = [];
-  m.onLog = t => logs.push(t);
+  const m = new Manager(fakeHost(dataRoot, repo, path.join(tmp, 'home5'), 'vscode 1.1.0'));
+  m.onLog = () => { /* ignore */ };
 
   const src = await m.saveSource({ name: 'ex', kind: 'git', location: examples, ref: 'v1.3.0', auth: 'none' }, undefined);
   m.setTarget('repo', 'copilot');
   let vs = await m.viewState();
   assert.strictEqual(vs.packages.find(p => p.name === 'code-review-kit')!.version, '1.3.0');
   assert.ok(vs.destination.some(l => l.includes('.github')));
+  assert.ok(vs.destination.some(l => l.startsWith('lock') && l.includes('plugin-lock.json')));
 
   await m.install([{ pkg: 'code-review-kit', components: [{ kind: 'skill', name: 'review-checklist' }, { kind: 'agent', name: 'reviewer' }] }], false);
+  assert.ok(fs.existsSync(path.join(repo, '.agents', 'plugin-lock.json')), 'lock file written into the repository');
   vs = await m.viewState();
   let crk = vs.packages.find(p => p.name === 'code-review-kit')!;
   assert.deepStrictEqual(crk.components.filter(c => c.installedHere).map(c => c.name).sort(), ['reviewer', 'review-checklist'].sort());
   assert.strictEqual(crk.installedHere?.count, 2);
+  assert.strictEqual(crk.installedHere?.installedBy, 'vscode 1.1.0');
 
-  // new version appears: clear the ref
   await m.saveSource({ id: src.id, name: 'ex', kind: 'git', location: examples, ref: '', auth: 'none' }, undefined);
   vs = await m.viewState();
   crk = vs.packages.find(p => p.name === 'code-review-kit')!;
@@ -268,15 +457,49 @@ test('manager: add git source at a tag, install, switch to HEAD, update, uninsta
   assert.ok(!fs.existsSync(path.join(repo, '.github', 'skills', 'review-checklist')));
   vs = await m.viewState();
   assert.strictEqual(vs.packages.find(p => p.name === 'code-review-kit')!.installedHere, undefined);
-  assert.strictEqual(new RecordStore(dataRoot).load().length, 0);
+  assert.ok(!fs.existsSync(path.join(repo, '.agents', 'plugin-lock.json')), 'lock file removed with the last item');
+});
+
+test('manager: a second manager (other edition) sees what the first installed, and track picks up manual copies', async () => {
+  const repo = path.join(tmp, 'repo-two');
+  fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
+  const home = path.join(tmp, 'home-two');
+
+  const a = new Manager(fakeHost(path.join(tmp, 'data-a'), repo, home, 'visual-studio 1.1.0'));
+  a.onLog = () => { /* ignore */ };
+  await a.saveSource({ name: 'ex', kind: 'local', location: examples, ref: '', auth: 'none' }, undefined);
+  a.setTarget('repo', 'claude');
+  await a.install([{ pkg: 'code-review-kit', components: [{ kind: 'skill', name: 'review-checklist' }] }], false);
+
+  // the other edition: separate data folder, same sources by address (added independently, different id)
+  const b = new Manager(fakeHost(path.join(tmp, 'data-b'), repo, home, 'vscode 1.1.0'));
+  const logs: string[] = [];
+  b.onLog = t => logs.push(t);
+  await b.saveSource({ name: 'same folder, typed differently', kind: 'local', location: examples + path.sep, ref: '', auth: 'none' }, undefined);
+  b.setTarget('repo', 'claude');
+  let vs = await b.viewState();
+  let crk = vs.packages.find(p => p.name === 'code-review-kit')!;
+  assert.ok(crk.installedHere, 'second edition sees the first edition\'s install');
+  assert.strictEqual(crk.installedHere!.installedBy, 'visual-studio 1.1.0');
+  assert.ok(crk.components.find(c => c.name === 'review-checklist')!.installedHere);
+
+  // something copied in by hand: presence + track
+  fs.cpSync(path.join(repo, '.claude', 'skills', 'review-checklist'), path.join(repo, '.claude', 'skills', 'commit-message'), { recursive: true });
+  assert.deepStrictEqual(b.presence('code-review-kit').map(p => p.name), ['commit-message']);   // differs from the package's commit-message
+  assert.strictEqual(b.presence('code-review-kit')[0].state, 'differs');
+  await b.track('code-review-kit');
+  assert.deepStrictEqual(b.presence('code-review-kit'), []);
+  vs = await b.viewState();
+  crk = vs.packages.find(p => p.name === 'code-review-kit')!;
+  assert.strictEqual(crk.installedHere!.count, 2);
+  assert.strictEqual(crk.installedHere!.installedBy, 'vscode 1.1.0');
 });
 
 test('manager: auto-update applies on load, declined confirmation cancels uninstall', async () => {
-  const dataRoot = path.join(tmp, 'data-auto');
   const repo = path.join(tmp, 'repo6');
   fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
   const answers = { confirm: true };
-  const m = new Manager(fakeHost(dataRoot, repo, answers));
+  const m = new Manager(fakeHost(path.join(tmp, 'data-auto'), repo, path.join(tmp, 'home6'), 'vscode 1.1.0', answers));
   m.onLog = () => { /* ignore */ };
 
   const src = await m.saveSource({ name: 'ex', kind: 'git', location: examples, ref: 'v1.3.0', auth: 'none' }, undefined);
@@ -294,11 +517,9 @@ test('manager: auto-update applies on load, declined confirmation cancels uninst
 
 test('manager: PAT sources require a token and keep it out of settings.json', async () => {
   const dataRoot = path.join(tmp, 'data-pat');
-  const m = new Manager(fakeHost(dataRoot, undefined));
+  const m = new Manager(fakeHost(dataRoot, undefined, path.join(tmp, 'home-pat'), 'vscode 1.1.0'));
   await assert.rejects(() => m.saveSource({ name: 'p', kind: 'git', location: 'owner/repo', ref: '', auth: 'pat' }, undefined), /token/i);
-  const settings = fs.readFileSync(path.join(dataRoot, 'settings.json'), 'utf8');
-  assert.ok(!/secret-token/.test(settings));
-  const hostWithToken = fakeHost(path.join(tmp, 'data-pat2'), undefined);
+  const hostWithToken = fakeHost(path.join(tmp, 'data-pat2'), undefined, path.join(tmp, 'home-pat2'), 'vscode 1.1.0');
   const m2 = new Manager(hostWithToken);
   m2.onLog = () => { /* load fails (no network); we only assert persistence */ };
   try { await m2.saveSource({ name: 'p', kind: 'git', location: 'owner/repo', ref: '', auth: 'pat' }, 'secret-token'); } catch { /* ignore */ }
@@ -307,9 +528,10 @@ test('manager: PAT sources require a token and keep it out of settings.json', as
 });
 
 test('record keys differ per destination', () => {
-  const a = keyOf({ packageName: 'p', sourceId: 's', scope: 'user', layout: 'copilot' } as any);
-  const b = keyOf({ packageName: 'p', sourceId: 's', scope: 'user', layout: 'claude' } as any);
-  const c = keyOf({ packageName: 'p', sourceId: 's', scope: 'repo', repoRoot: '/x', layout: 'copilot' } as any);
+  const base = { packageName: 'p', sourceKey: 's' } as any;
+  const a = keyOf({ ...base, scope: 'user', layout: 'copilot' });
+  const b = keyOf({ ...base, scope: 'user', layout: 'claude' });
+  const c = keyOf({ ...base, scope: 'repo', repoRoot: '/x', layout: 'copilot' });
   assert.notStrictEqual(a, b);
   assert.notStrictEqual(a, c);
 });

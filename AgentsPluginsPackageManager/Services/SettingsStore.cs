@@ -12,6 +12,14 @@ namespace AgentsPluginsPackageManager.Services
             ? d
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AgentsPluginsPackageManager");
 
+        /// <summary>The user's home folder, or AGENTPLUGINS_HOME (used by automated tests).</summary>
+        public static string Home { get; } = Environment.GetEnvironmentVariable("AGENTPLUGINS_HOME") is string h && h.Length > 0
+            ? h
+            : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        /// <summary>"visual-studio &lt;version&gt;", written to the lock file as installedBy.</summary>
+        public static string ToolName { get; } = "visual-studio " + (typeof(SettingsStore).Assembly.GetName().Version?.ToString(3) ?? "0.0.0");
+
         public static string CacheRoot => Path.Combine(DataRoot, "cache");
         public static string PluginPayloadRoot => Path.Combine(DataRoot, "plugins");
         private static string FilePath => Path.Combine(DataRoot, "settings.json");

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Console test runner for the Visual Studio extension's UI-independent code (exit code 0 = all passed). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>AgentsPluginsPackageManager.CoreTests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Security" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <Compile Include="..\..\AgentsPluginsPackageManager\Models\Models.cs" Link="Extension\Models.cs" />
+    <Compile Include="..\..\AgentsPluginsPackageManager\Services\*.cs" Link="Extension\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\shared\**\*" Link="shared\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

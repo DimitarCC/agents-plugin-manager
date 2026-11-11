@@ -143,6 +143,7 @@ input::placeholder { color: var(--muted); }
   background: var(--accent-soft); border: 1px solid var(--accent-text); color: var(--accent-text); line-height: 16px;
 }
 .tag.big { font-size: 12px; padding: 1px 9px; line-height: 18px; }
+.tag.warn { background: color-mix(in srgb, var(--bg), var(--warn) 18%); border-color: var(--warn); color: var(--warn); }
 
 /* progress */
 .progress { height: 3px; border-radius: 2px; background: transparent; overflow: hidden; margin-bottom: 6px; position: relative; }
@@ -191,6 +192,7 @@ input::placeholder { color: var(--muted); }
   margin-top: 10px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--strong); background: var(--surface);
 }
 .banner.update { background: var(--accent-soft); border-color: var(--accent-text); }
+.banner.warn { background: color-mix(in srgb, var(--bg), var(--warn) 12%); border-color: var(--warn); }
 .inside-head { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
 .inside-head .btns { gap: 6px; }
 

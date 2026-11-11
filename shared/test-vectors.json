@@ -1,0 +1,30 @@
+{
+  "sourceKeys": [
+    { "kind": "git",   "input": "owner/repo",                                           "key": "github.com/owner/repo" },
+    { "kind": "git",   "input": "Owner/Repo",                                           "key": "github.com/owner/repo" },
+    { "kind": "git",   "input": "https://github.com/Owner/Repo.git",                    "key": "github.com/owner/repo" },
+    { "kind": "git",   "input": "https://github.com/owner/repo/",                       "key": "github.com/owner/repo" },
+    { "kind": "git",   "input": "  https://GitHub.com/owner/repo?x=1#frag  ",          "key": "github.com/owner/repo" },
+    { "kind": "git",   "input": "git@github.com:Owner/Repo.git",                        "key": "github.com/owner/repo" },
+    { "kind": "git",   "input": "https://user:pw@dev.azure.com/Org/Proj/_git/Repo",     "key": "dev.azure.com/org/proj/_git/repo" },
+    { "kind": "git",   "input": "https://git.example.com:8443/team/plugins.git",        "key": "git.example.com/team/plugins" },
+    { "kind": "git",   "input": "https://github.com",                                   "key": "github.com" },
+    { "kind": "local", "input": "E:\\Work\\Plugins\\",                                  "key": "file:e:/work/plugins" },
+    { "kind": "local", "input": "e:/work/plugins",                                      "key": "file:e:/work/plugins" },
+    { "kind": "local", "input": "\\\\Server\\Share\\Plugins",                            "key": "file://server/share/plugins" },
+    { "kind": "local", "input": "/home/me/Plugins/",                                    "key": "file:/home/me/Plugins" }
+  ],
+  "canonicalJson": [
+    { "input": { "b": 1, "a": [true, null, "x\"y"], "c": { "z": "é\n" } }, "output": "{\"a\":[true,null,\"x\\\"y\"],\"b\":1,\"c\":{\"z\":\"\\u00e9\\u000a\"}}" }
+  ],
+  "fixture": {
+    "folder": "shared/fixtures/sample-plugin",
+    "components": [
+      { "kind": "skill", "name": "alpha", "path": "skills/alpha", "isDirectory": true },
+      { "kind": "agent", "name": "helper", "path": "agents/helper.md", "isDirectory": false },
+      { "kind": "prompt", "name": "ask", "path": "prompts/ask.md", "isDirectory": false },
+      { "kind": "mcp", "name": "srv", "definition": { "type": "stdio", "command": "npx", "args": ["-y", "pkg"], "env": { "K": "v" } } }
+    ],
+    "fingerprint": "QWTJDtp+QpbgJMlBUENK37ytEns="
+  }
+}

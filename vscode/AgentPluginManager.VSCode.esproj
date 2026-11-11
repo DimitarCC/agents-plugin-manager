@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.VisualStudio.JavaScript.Sdk/1.0.7204101">
+  <PropertyGroup>
+    <ProjectGuid>{5d7c0a4e-93f1-4b6a-8c2d-61e0f4b7a9d3}</ProjectGuid>
+    <ShouldRunNpmInstall>true</ShouldRunNpmInstall>
+    <ShouldRunBuildScript>true</ShouldRunBuildScript>
+    <!-- Debug: compile TypeScript. Release: compile, then package the .vsix (vscode\agent-plugin-manager-<version>.vsix). -->
+    <BuildCommand>npm run compile</BuildCommand>
+    <BuildCommand Condition="'$(Configuration)' == 'Release'">npm run package</BuildCommand>
+    <BuildOutputFolder>$(MSBuildProjectDirectory)\out</BuildOutputFolder>
+    <ProductVersion>1.1.0</ProductVersion>
+  </PropertyGroup>
+</Project>

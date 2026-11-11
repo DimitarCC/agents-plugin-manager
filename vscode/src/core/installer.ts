@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { copyTree, ensureDir, exists, forceDelete, readJsonFile, safeName, writeJsonFile } from './fsutil';
+import { contentBlock } from './hash';
 import {
   ClientLayout, InstallRecord, InstallScope, InstalledComponent, PluginComponent, PluginPackage,
 } from './types';
@@ -120,7 +121,7 @@ function copyDirectoryComponent(pkg: PluginPackage, c: PluginComponent, root: st
   const target = path.join(root, safeName(c.name));
   if (exists(target)) {
     if (!overwrite) {
-      res.skipped.push(`${c.name}: already exists (${target})`);
+      skipExisting(c, src, target, true, res);
       return;
     }
     forceDelete(target);
@@ -138,13 +139,56 @@ function copyFileComponent(pkg: PluginPackage, c: PluginComponent, dir: string |
   const src = path.join(pkg.rootPath, ...c.relativePath.split('/'));
   const target = path.join(dir, safeName(c.name) + suffix);
   if (exists(target) && !overwrite) {
-    res.skipped.push(`${c.name}: already exists (${target})`);
+    skipExisting(c, src, target, false, res);
     return;
   }
   ensureDir(dir);
   fs.copyFileSync(src, target);
   res.installed.push(`${c.kind} ${c.name} → ${target}`);
   res.installedComponents.push(c);
+}
+
+/** An item is already there: if it is identical to this package's version, just start tracking it; otherwise skip. */
+function skipExisting(c: PluginComponent, src: string, target: string, isDir: boolean, res: InstallResult): void {
+  if (contentBlock(src, isDir) === contentBlock(target, isDir)) {
+    res.installed.push(`${c.kind} ${c.name}: already up to date, now tracked (${target})`);
+    res.installedComponents.push(c);
+  } else {
+    res.skipped.push(`${c.name}: already exists and differs from this version (${target}); tick "Overwrite existing" to replace it`);
+  }
+}
+
+/** Where a component is installed for a layout, or undefined when the layout doesn't support its kind. */
+export function targetPath(layout: InstallLayout, c: { kind: string; name: string }): string | undefined {
+  switch (c.kind) {
+    case 'skill': return layout.skillsDir ? path.join(layout.skillsDir, safeName(c.name)) : undefined;
+    case 'agent': return layout.agentsDir ? path.join(layout.agentsDir, safeName(c.name) + layout.agentSuffix) : undefined;
+    case 'prompt': return layout.promptsDir ? path.join(layout.promptsDir, safeName(c.name) + layout.promptSuffix) : undefined;
+    default: return undefined;
+  }
+}
+
+/** '' = not there; same / differs = present with identical / different content; present = MCP server (not comparable). */
+export type Presence = '' | 'same' | 'differs' | 'present';
+
+export function presenceOf(pkg: PluginPackage, c: PluginComponent, scope: InstallScope, layout: ClientLayout, repoRoot: string | undefined, env: InstallEnv): Presence {
+  if (!c.installable || (scope === 'repo' && !repoRoot)) {
+    return '';
+  }
+  const l = resolveLayout(scope, layout, repoRoot, env);
+  if (c.kind === 'mcp') {
+    if (!l.mcpFile || !exists(l.mcpFile)) {
+      return '';
+    }
+    const section = readJsonFile<any>(l.mcpFile)?.[l.mcpSection];
+    return section && typeof section === 'object' && c.name in section ? 'present' : '';
+  }
+  const target = targetPath(l, c);
+  if (!target || !exists(target)) {
+    return '';
+  }
+  const src = path.join(pkg.rootPath, ...c.relativePath.split('/'));
+  return contentBlock(src, c.isDirectory) === contentBlock(target, c.isDirectory) ? 'same' : 'differs';
 }
 
 function installMcp(req: InstallRequest, servers: PluginComponent[], layout: InstallLayout, res: InstallResult): void {
