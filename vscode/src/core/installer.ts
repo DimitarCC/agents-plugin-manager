@@ -3,7 +3,7 @@ import * as path from 'path';
 import { copyTree, ensureDir, exists, forceDelete, readJsonFile, safeName, writeJsonFile } from './fsutil';
 import { contentBlock } from './hash';
 import {
-  ClientLayout, InstallRecord, InstallScope, InstalledComponent, PluginComponent, PluginPackage,
+  ClientLayout, InstallRecord, InstallScope, InstalledComponent, PluginComponent, PluginPackage, clientLabel, layoutClient,
 } from './types';
 
 /** Machine specific locations the layouts are resolved against. */
@@ -20,40 +20,47 @@ export interface InstallLayout {
   skillsDir?: string;
   agentsDir?: string;
   promptsDir?: string;
+  /** Rules / instructions (.github/instructions, .claude/rules). */
+  rulesDir?: string;
   mcpFile?: string;
   /** JSON property that holds the servers map ("mcpServers" or "servers"). */
   mcpSection: 'mcpServers' | 'servers';
   agentSuffix: string;
   promptSuffix: string;
+  ruleSuffix: string;
   payloadRoot: string;
 }
 
 export function resolveLayout(scope: InstallScope, layout: ClientLayout, repoRoot: string | undefined, env: InstallEnv): InstallLayout {
   const user = scope === 'user';
   const base = user ? env.home : repoRoot ?? '';
-  const l: InstallLayout = { mcpSection: 'mcpServers', agentSuffix: '.md', promptSuffix: '.md', payloadRoot: '' };
+  const l: InstallLayout = { mcpSection: 'mcpServers', agentSuffix: '.md', promptSuffix: '.md', ruleSuffix: '.md', payloadRoot: '' };
   switch (layout) {
     case 'claude':
       l.skillsDir = path.join(base, '.claude', 'skills');
       l.agentsDir = path.join(base, '.claude', 'agents');
       l.promptsDir = path.join(base, '.claude', 'commands');
+      l.rulesDir = path.join(base, '.claude', 'rules');
       l.mcpFile = path.join(base, user ? '.claude.json' : '.mcp.json');
       l.mcpSection = 'mcpServers';
       break;
     case 'copilot':
       l.agentSuffix = '.agent.md';
       l.promptSuffix = '.prompt.md';
+      l.ruleSuffix = '.instructions.md';
       l.mcpSection = 'servers';
       if (user) {
-        // VS Code reads user-level prompt files, custom agents and MCP servers from the profile folder.
+        // VS Code reads user-level prompt files, custom agents, instructions and MCP servers from the profile folder.
         l.skillsDir = path.join(env.home, '.copilot', 'skills');
         l.agentsDir = path.join(env.userDir, 'prompts');
         l.promptsDir = path.join(env.userDir, 'prompts');
+        l.rulesDir = path.join(env.userDir, 'prompts');
         l.mcpFile = path.join(env.userDir, 'mcp.json');
       } else {
         l.skillsDir = path.join(base, '.github', 'skills');
         l.agentsDir = path.join(base, '.github', 'agents');
         l.promptsDir = path.join(base, '.github', 'prompts');
+        l.rulesDir = path.join(base, '.github', 'instructions');
         l.mcpFile = path.join(base, '.vscode', 'mcp.json');
       }
       break;
@@ -91,6 +98,11 @@ export function install(req: InstallRequest): InstallResult {
   const mcp: PluginComponent[] = [];
 
   for (const c of req.components.filter(c => c.installable)) {
+    // Items from a client namespace folder (com.github.copilot/…) are only valid for that client.
+    if (c.client && c.client !== layoutClient(req.layout)) {
+      res.skipped.push(`${c.name}: made for ${clientLabel(c.client)} (${c.namespace}); choose that client to install it`);
+      continue;
+    }
     switch (c.kind) {
       case 'skill':
         copyDirectoryComponent(req.pkg, c, layout.skillsDir, req.overwrite, res);
@@ -100,6 +112,9 @@ export function install(req: InstallRequest): InstallResult {
         break;
       case 'prompt':
         copyFileComponent(req.pkg, c, layout.promptsDir, layout.promptSuffix, req.overwrite, res);
+        break;
+      case 'rule':
+        copyFileComponent(req.pkg, c, layout.rulesDir, layout.ruleSuffix, req.overwrite, res);
         break;
       case 'mcp':
         mcp.push(c);
@@ -164,6 +179,7 @@ export function targetPath(layout: InstallLayout, c: { kind: string; name: strin
     case 'skill': return layout.skillsDir ? path.join(layout.skillsDir, safeName(c.name)) : undefined;
     case 'agent': return layout.agentsDir ? path.join(layout.agentsDir, safeName(c.name) + layout.agentSuffix) : undefined;
     case 'prompt': return layout.promptsDir ? path.join(layout.promptsDir, safeName(c.name) + layout.promptSuffix) : undefined;
+    case 'rule': return layout.rulesDir ? path.join(layout.rulesDir, safeName(c.name) + layout.ruleSuffix) : undefined;
     default: return undefined;
   }
 }
@@ -172,7 +188,7 @@ export function targetPath(layout: InstallLayout, c: { kind: string; name: strin
 export type Presence = '' | 'same' | 'differs' | 'present';
 
 export function presenceOf(pkg: PluginPackage, c: PluginComponent, scope: InstallScope, layout: ClientLayout, repoRoot: string | undefined, env: InstallEnv): Presence {
-  if (!c.installable || (scope === 'repo' && !repoRoot)) {
+  if (!c.installable || (scope === 'repo' && !repoRoot) || (c.client && c.client !== layoutClient(layout))) {
     return '';
   }
   const l = resolveLayout(scope, layout, repoRoot, env);
@@ -314,6 +330,8 @@ export function uninstall(rec: InstallRecord, items: InstalledComponent[], env: 
       target = path.join(layout.agentsDir, safeName(item.name) + layout.agentSuffix);
     } else if (item.kind === 'prompt' && layout.promptsDir) {
       target = path.join(layout.promptsDir, safeName(item.name) + layout.promptSuffix);
+    } else if (item.kind === 'rule' && layout.rulesDir) {
+      target = path.join(layout.rulesDir, safeName(item.name) + layout.ruleSuffix);
     }
     if (!target) {
       res.skipped.push(`${item.name}: not supported by this client layout`);

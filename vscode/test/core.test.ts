@@ -6,7 +6,7 @@ import * as path from 'path';
 import { test, before, after } from 'node:test';
 import { parseFrontMatter } from '../src/core/frontmatter';
 import { canonicalJson } from '../src/core/hash';
-import { install, resolveLayout, uninstall, InstallEnv } from '../src/core/installer';
+import { install, presenceOf, resolveLayout, uninstall, InstallEnv } from '../src/core/installer';
 import { LockStore } from '../src/core/lockstore';
 import { Host, Manager } from '../src/core/manager';
 import { discover } from '../src/core/scanner';
@@ -112,6 +112,87 @@ test('shared vectors: fingerprint of the sample plugin', () => {
   assert.strictEqual(fingerprint(pkg, comps), vectors.fixture.fingerprint);
   // order of components must not matter
   assert.strictEqual(fingerprint(pkg, [...comps].reverse()), vectors.fixture.fingerprint);
+});
+
+// ───────── client namespace folders (com.github.copilot/agents, …) ─────────
+
+test('shared vectors: scanning the sample plugin finds portable items and client namespace items', () => {
+  const pkg = discover(path.join(sharedRoot, 'fixtures', 'sample-plugin'))[0];
+  const actual = pkg.components.filter(c => c.kind !== 'hook')
+    .map(c => `${c.kind}:${c.name}:${c.relativePath}:${c.client ?? ''}:${c.installable}`).sort();
+  const expected = vectors.scan.components
+    .map((c: any) => `${c.kind}:${c.name}:${c.path}:${c.client ?? ''}:${c.installable}`).sort();
+  assert.deepStrictEqual(actual, expected);
+  assert.ok(pkg.warnings.some(w => w.includes('com.example.client') && w.includes('not recognised')), 'unknown client namespace is reported');
+});
+
+function sampleInstall(layout: 'copilot' | 'claude' | 'agents', scope: 'repo' | 'user', root: string) {
+  const pkg = discover(path.join(sharedRoot, 'fixtures', 'sample-plugin'))[0];
+  const env = { ...envFor(root), home: path.join(root, 'home') };
+  const comps = pkg.components.filter(c => c.installable);
+  return { pkg, env, res: install({ pkg, components: comps, scope, layout, repoRoot: root, overwrite: false, env }), root };
+}
+
+test('namespace items install only for their own client; rules go to the client-specific folder', () => {
+  const rc = path.join(tmp, 'ns-copilot');
+  fs.mkdirSync(rc, { recursive: true });
+  const copilot = sampleInstall('copilot', 'repo', rc);
+  assert.ok(fs.existsSync(path.join(rc, '.github', 'agents', 'pilot.agent.md')), 'Copilot agent from com.github.copilot/agents');
+  assert.ok(fs.existsSync(path.join(rc, '.github', 'instructions', 'style.instructions.md')), 'Copilot rule becomes .github/instructions/*.instructions.md');
+  assert.ok(fs.existsSync(path.join(rc, '.github', 'agents', 'helper.agent.md')), 'portable agent installs too');
+  assert.ok(!fs.existsSync(path.join(rc, '.claude')), 'nothing Claude-specific is written');
+  const skipped = copilot.res.skipped.join('\n');
+  assert.ok(skipped.includes('ship') && skipped.includes('tone') && skipped.includes('made for Claude Code'), 'Claude items are skipped with an explanation');
+
+  const rk = path.join(tmp, 'ns-claude');
+  fs.mkdirSync(rk, { recursive: true });
+  const claude = sampleInstall('claude', 'repo', rk);
+  assert.ok(fs.existsSync(path.join(rk, '.claude', 'commands', 'ship.md')), 'Claude command from com.anthropic.claude/commands');
+  assert.ok(fs.existsSync(path.join(rk, '.claude', 'rules', 'tone.md')), 'Claude rule goes to .claude/rules');
+  assert.ok(!fs.existsSync(path.join(rk, '.github')), 'nothing Copilot-specific is written');
+  assert.ok(claude.res.skipped.join('\n').includes('made for GitHub Copilot'));
+
+  const ra = path.join(tmp, 'ns-agents');
+  fs.mkdirSync(ra, { recursive: true });
+  const neutral = sampleInstall('agents', 'repo', ra);
+  assert.deepStrictEqual(fs.readdirSync(path.join(ra, '.agents', 'skills')), ['alpha'], 'agent-neutral layout only takes skills');
+  assert.ok(neutral.res.installedComponents.every(c => c.kind === 'skill'));
+
+  // user scope (VS Code: rules live in the profile prompts folder)
+  const ru = path.join(tmp, 'ns-user');
+  fs.mkdirSync(ru, { recursive: true });
+  const user = sampleInstall('copilot', 'user', ru);
+  assert.ok(fs.existsSync(path.join(user.env.userDir, 'prompts', 'style.instructions.md')));
+
+  // presence ignores items made for another client; uninstall removes rules
+  const style = copilot.pkg.components.find(c => c.name === 'style')!;
+  const tone = copilot.pkg.components.find(c => c.name === 'tone')!;
+  assert.strictEqual(presenceOf(copilot.pkg, style, 'repo', 'copilot', rc, copilot.env), 'same');
+  assert.strictEqual(presenceOf(copilot.pkg, tone, 'repo', 'copilot', rc, copilot.env), '', 'Claude rule is not "present" for Copilot');
+  const rec = { packageName: 'p', sourceKey: 's', sourceKind: 'git', sourceLocation: '', ref: '', version: '', fingerprint: '', scope: 'repo' as const, repoRoot: rc, layout: 'copilot' as const, installedUtc: '', installedBy: '',
+    components: [{ kind: 'rule' as const, name: 'style' }] } as InstallRecord;
+  assert.strictEqual(uninstall(rec, rec.components, copilot.env).removedComponents.length, 1);
+  assert.ok(!fs.existsSync(path.join(rc, '.github', 'instructions', 'style.instructions.md')));
+});
+
+test('unknown client namespaces are listed but never installed', () => {
+  const pkg = discover(path.join(sharedRoot, 'fixtures', 'sample-plugin'))[0];
+  const odd = pkg.components.find(c => c.name === 'odd')!;
+  assert.strictEqual(odd.installable, false);
+  const root = path.join(tmp, 'ns-odd');
+  fs.mkdirSync(root, { recursive: true });
+  const res = install({ pkg, components: [odd], scope: 'repo', layout: 'copilot', repoRoot: root, overwrite: false, env: envFor(root) });
+  assert.strictEqual(res.installedComponents.length, 0);
+});
+
+test('duplicate names between portable and namespace folders are reported once', () => {
+  const dir = path.join(tmp, 'dup-plugin');
+  write(path.join(dir, 'plugin.json'), manifest('dup', '1.0.0', 'x'));
+  write(path.join(dir, 'agents', 'same.md'), '---\ndescription: portable\n---\n');
+  write(path.join(dir, 'com.github.copilot', 'agents', 'same.md'), '---\ndescription: copilot\n---\n');
+  const pkg = discover(dir)[0];
+  assert.strictEqual(pkg.components.filter(c => c.name === 'same').length, 1);
+  assert.ok(pkg.warnings.some(w => w.includes('more than once')));
 });
 
 // ───────── scanner ─────────

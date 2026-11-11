@@ -24,7 +24,8 @@ namespace AgentsPluginsPackageManager.Models
 
     public enum ClientLayout { Claude, Copilot, AgentsNeutral }
 
-    public enum ComponentKind { Skill, McpServer, Agent, Prompt, Hook }
+    /// <summary>Rule is last on purpose: the numeric values are part of the fingerprint order and of old record files.</summary>
+    public enum ComponentKind { Skill, McpServer, Agent, Prompt, Hook, Rule }
 
     /// <summary>A repository (or folder) that contains one or more agent plugin packages.</summary>
     public sealed class PluginSource
@@ -144,6 +145,18 @@ namespace AgentsPluginsPackageManager.Models
         public string Preview { get; set; } = "";
         public Newtonsoft.Json.Linq.JObject? McpDefinition { get; set; }
 
+        /// <summary>For items found in a client namespace folder (e.g. com.github.copilot/agents): "copilot" or "claude".</summary>
+        public string? Client { get; set; }
+        /// <summary>The namespace folder the item came from, e.g. "com.github.copilot". Null for the portable top-level folders.</summary>
+        public string? Namespace { get; set; }
+
+        /// <summary>Chip next to the name: the client the item is made for, or the unrecognised namespace.</summary>
+        public string ClientTag => Client != null ? Client.ToUpperInvariant() : (!Installable && Namespace != null ? Namespace : "");
+        public bool HasClientTag => ClientTag.Length > 0;
+        public string ClientTagToolTip => Client != null
+            ? "Made for " + (Client == "copilot" ? "GitHub Copilot" : "Claude Code") + " (" + Namespace + "). Only installed when that client is selected."
+            : Namespace + ": this tool does not know that client, so the item can't be installed.";
+
         public string KindTag
         {
             get
@@ -154,6 +167,7 @@ namespace AgentsPluginsPackageManager.Models
                     case ComponentKind.McpServer: return "MCP";
                     case ComponentKind.Agent: return "AGENT";
                     case ComponentKind.Prompt: return "PROMPT";
+                    case ComponentKind.Rule: return "RULE";
                     default: return "HOOK";
                 }
             }
@@ -169,7 +183,25 @@ namespace AgentsPluginsPackageManager.Models
                     case ComponentKind.McpServer: return "MCP servers";
                     case ComponentKind.Agent: return "Agents";
                     case ComponentKind.Prompt: return "Prompts / commands";
+                    case ComponentKind.Rule: return "Rules / instructions";
                     default: return "Hooks & other (not installable)";
+                }
+            }
+        }
+
+        /// <summary>Display order of the groups in the UI.</summary>
+        public int KindOrder
+        {
+            get
+            {
+                switch (Kind)
+                {
+                    case ComponentKind.Skill: return 0;
+                    case ComponentKind.McpServer: return 1;
+                    case ComponentKind.Agent: return 2;
+                    case ComponentKind.Prompt: return 3;
+                    case ComponentKind.Rule: return 4;
+                    default: return 5;
                 }
             }
         }
@@ -292,7 +324,7 @@ namespace AgentsPluginsPackageManager.Models
         {
             get
             {
-                int s = 0, m = 0, a = 0, p = 0;
+                int s = 0, m = 0, a = 0, p = 0, r = 0;
                 foreach (var c in Components)
                 {
                     switch (c.Kind)
@@ -301,12 +333,14 @@ namespace AgentsPluginsPackageManager.Models
                         case ComponentKind.McpServer: m++; break;
                         case ComponentKind.Agent: a++; break;
                         case ComponentKind.Prompt: p++; break;
+                        case ComponentKind.Rule: r++; break;
                     }
                 }
                 var parts = new List<string>();
                 if (s > 0) parts.Add(s + " skill" + (s == 1 ? "" : "s"));
                 if (a > 0) parts.Add(a + " agent" + (a == 1 ? "" : "s"));
                 if (p > 0) parts.Add(p + " prompt" + (p == 1 ? "" : "s"));
+                if (r > 0) parts.Add(r + " rule" + (r == 1 ? "" : "s"));
                 if (m > 0) parts.Add(m + " MCP");
                 return parts.Count == 0 ? "no components" : string.Join(" · ", parts);
             }

@@ -2,14 +2,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { parseFrontMatter } from './frontmatter';
 import { exists, isDir, readJsonFile } from './fsutil';
-import { PluginComponent, PluginPackage } from './types';
+import { ClientId, ComponentKind, PluginComponent, PluginPackage } from './types';
 
 const MAX_DEPTH = 4;
 const MAX_PREVIEW = 6000;
 
 /**
- * Reads plugin packages laid out per https://agent-plugins.org (plugin.json, skills/<n>/SKILL.md, mcp.json)
- * plus the common non-standard agents/, prompts/ and commands/ folders.
+ * Reads plugin packages laid out per https://agent-plugins.org (plugin.json, skills/<n>/SKILL.md, mcp.json), plus the
+ * common non-standard agents/, prompts/, commands/ and rules/ folders, and client namespace folders such as
+ * com.github.copilot/ or com.anthropic.claude/ (the spec leaves their content to each client).
  */
 export function discover(sourceRoot: string): PluginPackage[] {
   const result: PluginPackage[] = [];
@@ -62,8 +63,27 @@ function manifestPath(dir: string): string | undefined {
   return exists(b) ? b : undefined;
 }
 
+/** A namespace folder is a top-level folder named like a reverse domain: com.github.copilot, com.example.client, … */
+function isNamespaceDir(name: string): boolean {
+  return !name.startsWith('.') && name.indexOf('.') > 0 && name !== 'node_modules';
+}
+
+function clientOf(namespace: string): ClientId | undefined {
+  const n = namespace.toLowerCase();
+  if (n.includes('copilot')) { return 'copilot'; }
+  if (n.includes('claude') || n.includes('anthropic')) { return 'claude'; }
+  return undefined;
+}
+
 function looksLikePlugin(dir: string): boolean {
-  return ['skills', 'agents', 'prompts', 'commands'].some(d => isDir(path.join(dir, d))) || exists(path.join(dir, 'mcp.json'));
+  if (['skills', 'agents', 'prompts', 'commands', 'rules', 'instructions'].some(d => isDir(path.join(dir, d))) || exists(path.join(dir, 'mcp.json'))) {
+    return true;
+  }
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true }).some(e => e.isDirectory() && isNamespaceDir(e.name) && clientOf(e.name) !== undefined);
+  } catch {
+    return false;
+  }
 }
 
 export function load(dir: string): PluginPackage {
@@ -89,11 +109,16 @@ export function load(dir: string): PluginPackage {
     }
   }
 
+  // Portable, top-level folders
   loadSkills(pkg, dir);
   loadMarkdownFolder(pkg, dir, 'agents', 'agent');
   loadMarkdownFolder(pkg, dir, 'prompts', 'prompt');
   loadMarkdownFolder(pkg, dir, 'commands', 'prompt');
+  loadMarkdownFolder(pkg, dir, 'rules', 'rule');
+  loadMarkdownFolder(pkg, dir, 'instructions', 'rule');
   loadMcp(pkg, dir);
+  // Client namespace folders (com.github.copilot/, com.anthropic.claude/, …)
+  loadNamespaces(pkg, dir);
   loadHooks(pkg, dir);
   return pkg;
 }
@@ -111,7 +136,26 @@ function sortedDirs(dir: string): string[] {
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
 
-function loadSkills(pkg: PluginPackage, dir: string): void {
+/** Where an item came from: the portable top-level folders, or a client namespace folder. */
+interface Origin {
+  prefix: string;
+  namespace?: string;
+  client?: ClientId;
+  /** False for a namespace of a client this tool doesn't know how to install for. */
+  installable: boolean;
+}
+
+const PORTABLE: Origin = { prefix: '', installable: true };
+
+function add(pkg: PluginPackage, c: PluginComponent): void {
+  if (pkg.components.some(x => x.kind === c.kind && x.name === c.name)) {
+    pkg.warnings.push(`${c.kind} "${c.name}" exists more than once (${c.relativePath}); only the first is listed.`);
+    return;
+  }
+  pkg.components.push(c);
+}
+
+function loadSkills(pkg: PluginPackage, dir: string, origin: Origin = PORTABLE): void {
   const skills = path.join(dir, 'skills');
   if (!isDir(skills)) {
     return;
@@ -129,14 +173,14 @@ function loadSkills(pkg: PluginPackage, dir: string): void {
     if (extras.length > 0) {
       preview = '[bundled: ' + extras.join(', ') + ']\n\n' + preview;
     }
-    pkg.components.push({
-      kind: 'skill', name: folder, description: fm['description'] ?? '', relativePath: 'skills/' + folder,
-      isDirectory: true, installable: true, preview,
+    add(pkg, {
+      kind: 'skill', name: folder, description: fm['description'] ?? '', relativePath: origin.prefix + 'skills/' + folder,
+      isDirectory: true, installable: origin.installable, preview, client: origin.client, namespace: origin.namespace,
     });
   }
 }
 
-function loadMarkdownFolder(pkg: PluginPackage, dir: string, folder: string, kind: 'agent' | 'prompt'): void {
+function loadMarkdownFolder(pkg: PluginPackage, dir: string, folder: string, kind: 'agent' | 'prompt' | 'rule', origin: Origin = PORTABLE): void {
   const d = path.join(dir, folder);
   if (!isDir(d)) {
     return;
@@ -147,12 +191,32 @@ function loadMarkdownFolder(pkg: PluginPackage, dir: string, folder: string, kin
     const text = readText(path.join(d, f));
     const fm = parseFrontMatter(text);
     let name = f.replace(/\.md$/i, '');
-    if (/\.(agent|prompt)$/i.test(name)) {
-      name = name.replace(/\.(agent|prompt)$/i, '');
+    if (/\.(agent|prompt|instructions)$/i.test(name)) {
+      name = name.replace(/\.(agent|prompt|instructions)$/i, '');
     }
-    pkg.components.push({
-      kind, name, description: fm['description'] ?? '', relativePath: folder + '/' + f, isDirectory: false, installable: true, preview: clip(text),
+    add(pkg, {
+      kind, name, description: fm['description'] ?? '', relativePath: origin.prefix + folder + '/' + f, isDirectory: false,
+      installable: origin.installable, preview: clip(text), client: origin.client, namespace: origin.namespace,
     });
+  }
+}
+
+/** Items in client namespace folders, e.g. com.github.copilot/agents and com.github.copilot/rules. */
+function loadNamespaces(pkg: PluginPackage, dir: string): void {
+  for (const ns of sortedDirs(dir).filter(isNamespaceDir)) {
+    const client = clientOf(ns);
+    const origin: Origin = { prefix: ns + '/', namespace: ns, client, installable: client !== undefined };
+    const nsDir = path.join(dir, ns);
+    const before = pkg.components.length;
+    loadSkills(pkg, nsDir, origin);
+    loadMarkdownFolder(pkg, nsDir, 'agents', 'agent', origin);
+    loadMarkdownFolder(pkg, nsDir, 'prompts', 'prompt', origin);
+    loadMarkdownFolder(pkg, nsDir, 'commands', 'prompt', origin);
+    loadMarkdownFolder(pkg, nsDir, 'rules', 'rule', origin);
+    loadMarkdownFolder(pkg, nsDir, 'instructions', 'rule', origin);
+    if (client === undefined && pkg.components.length > before) {
+      pkg.warnings.push(`${ns}: client not recognised; its items are listed but can't be installed.`);
+    }
   }
 }
 
@@ -184,7 +248,7 @@ function loadMcp(pkg: PluginPackage, dir: string): void {
         shown.env[k] = '…'; // never preview secrets
       }
     }
-    pkg.components.push({
+    add(pkg, {
       kind: 'mcp', name, description: desc, relativePath: path.basename(file), isDirectory: false, installable: true,
       preview: JSON.stringify(shown, null, 2), mcp: JSON.parse(JSON.stringify(def)),
     });
@@ -199,7 +263,7 @@ function loadHooks(pkg: PluginPackage, dir: string): void {
     const n = e.name;
     const hasHooks = isDir(path.join(dir, n, 'hooks'));
     if (n.toLowerCase() === 'hooks' || (n.indexOf('.') > 0 && hasHooks)) {
-      pkg.components.push({
+      add(pkg, {
         kind: 'hook', name: n.toLowerCase() === 'hooks' ? 'hooks' : n + '/hooks',
         description: 'Client-specific hook definitions; not supported by the installer.',
         relativePath: n, isDirectory: true, installable: false, preview: '',
@@ -208,6 +272,7 @@ function loadHooks(pkg: PluginPackage, dir: string): void {
   }
 }
 
-export function kindOrder(k: PluginComponent['kind']): number {
-  return ['skill', 'mcp', 'agent', 'prompt', 'hook'].indexOf(k);
+/** Display order of the groups in the UI. */
+export function kindOrder(k: ComponentKind): number {
+  return ['skill', 'mcp', 'agent', 'prompt', 'rule', 'hook'].indexOf(k);
 }

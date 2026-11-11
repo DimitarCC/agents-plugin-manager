@@ -17,14 +17,29 @@
   "canonicalJson": [
     { "input": { "b": 1, "a": [true, null, "x\"y"], "c": { "z": "é\n" } }, "output": "{\"a\":[true,null,\"x\\\"y\"],\"b\":1,\"c\":{\"z\":\"\\u00e9\\u000a\"}}" }
   ],
+  "scan": {
+    "comment": "What both scanners must find in the sample plugin (client-specific folders are namespaces such as com.github.copilot).",
+    "folder": "shared/fixtures/sample-plugin",
+    "components": [
+      { "kind": "skill",  "name": "alpha",  "path": "skills/alpha",                              "client": null,      "installable": true },
+      { "kind": "agent",  "name": "helper", "path": "agents/helper.md",                          "client": null,      "installable": true },
+      { "kind": "prompt", "name": "ask",    "path": "prompts/ask.md",                            "client": null,      "installable": true },
+      { "kind": "agent",  "name": "pilot",  "path": "com.github.copilot/agents/pilot.md",        "client": "copilot", "installable": true },
+      { "kind": "rule",   "name": "style",  "path": "com.github.copilot/rules/style.md",         "client": "copilot", "installable": true },
+      { "kind": "prompt", "name": "ship",   "path": "com.anthropic.claude/commands/ship.md",     "client": "claude",  "installable": true },
+      { "kind": "rule",   "name": "tone",   "path": "com.anthropic.claude/rules/tone.md",        "client": "claude",  "installable": true },
+      { "kind": "agent",  "name": "odd",    "path": "com.example.client/agents/odd.md",          "client": null,      "installable": false }
+    ]
+  },
   "fixture": {
     "folder": "shared/fixtures/sample-plugin",
     "components": [
       { "kind": "skill", "name": "alpha", "path": "skills/alpha", "isDirectory": true },
       { "kind": "agent", "name": "helper", "path": "agents/helper.md", "isDirectory": false },
       { "kind": "prompt", "name": "ask", "path": "prompts/ask.md", "isDirectory": false },
+      { "kind": "rule", "name": "style", "path": "com.github.copilot/rules/style.md", "isDirectory": false },
       { "kind": "mcp", "name": "srv", "definition": { "type": "stdio", "command": "npx", "args": ["-y", "pkg"], "env": { "K": "v" } } }
     ],
-    "fingerprint": "QWTJDtp+QpbgJMlBUENK37ytEns="
+    "fingerprint": "nVLu8SX0rHSQ5g/5Oa0VK0cqC38="
   }
 }

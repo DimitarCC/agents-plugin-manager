@@ -16,8 +16,16 @@ are shown as **PRESENT** (identical or different) and can be tracked with one cl
 
 ## Sources
 A source is a git repository (or local folder) containing one or more plugin packages
-(a folder with `plugin.json`, `skills/<name>/SKILL.md`, `mcp.json`; `agents/`, `prompts/` and `commands/`
+(a folder with `plugin.json`, `skills/<name>/SKILL.md`, `mcp.json`; `agents/`, `prompts/`, `commands/` and `rules/`
 folders are also recognised). A repo whose root is a single plugin works too.
+
+**Client folders.** The Agent Plugins spec lets a client keep its own files in a top-level folder named after a reverse
+domain. Those folders are scanned too, for `agents/`, `prompts/`, `commands/`, `rules/` (or `instructions/`) and `skills/`:
+- `com.github.copilot/…` is shown with a **COPILOT** chip and is only installed when the GitHub Copilot client is selected.
+- `com.anthropic.claude*/…` is shown with a **CLAUDE** chip and is only installed for the Claude Code client.
+- Any other namespace (for example `com.example.client`) is listed but can't be installed, since this tool doesn't know
+  its format. Hooks are listed for information only.
+- If the same item exists both at the top level and in a client folder, only the first is listed (with a warning).
 
 Authentication for private/enterprise repos:
 - **Single sign-on**: uses your installed `git` + Git Credential Manager, which opens the organization's
@@ -32,8 +40,8 @@ then choose the destination:
 
 | Client | User folders | This repository |
 |---|---|---|
-| GitHub Copilot | `~/.copilot/{skills,agents,prompts}`, `~/.mcp.json` | `.github/{skills,agents,prompts}`, `.mcp.json` |
-| Claude Code | `~/.claude/{skills,agents,commands}`, `~/.claude.json` | `.claude/{skills,agents,commands}`, `.mcp.json` |
+| GitHub Copilot | `~/.copilot/{skills,agents,prompts,instructions}`, `~/.mcp.json` | `.github/{skills,agents,prompts,instructions}`, `.mcp.json` |
+| Claude Code | `~/.claude/{skills,agents,commands,rules}`, `~/.claude.json` | `.claude/{skills,agents,commands,rules}`, `.mcp.json` |
 | Agent-neutral | `~/.agents/skills` | `.agents/skills` |
 
 MCP servers are opt-in (unticked by default), merged into the existing JSON (a `.bak` is written first),

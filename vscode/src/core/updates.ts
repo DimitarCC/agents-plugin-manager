@@ -206,7 +206,7 @@ export function trackPresent(
 // ───────── fingerprint (see docs/plugin-lock.md) ─────────
 
 export function fingerprint(pkg: PluginPackage, components: PluginComponent[]): string {
-  const order = ['skill', 'mcp', 'agent', 'prompt', 'hook'];
+  const order = ['skill', 'mcp', 'agent', 'prompt', 'hook', 'rule'];   // same order as the C# ComponentKind enum
   const sorted = [...components].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || ordinal(a.name, b.name));
   let text = '';
   for (const c of sorted) {

@@ -4,6 +4,18 @@ All notable changes to the VS Code extension are documented here.
 The Visual Studio extension has its own [changelog](../CHANGELOG.md).
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-11-13
+
+Matches Visual Studio edition 1.2.0.
+
+### Added
+- **Client folders.** Plugins that keep client-specific files in a reverse-domain folder such as `com.github.copilot/` or `com.anthropic.claude/` are now read. Inside such a folder `agents/`, `prompts/`, `commands/`, `rules/` (or `instructions/`) and `skills/` are listed and installed.
+- **Rules / instructions** are a new kind of item, with their own group in the package details: GitHub Copilot `.github/instructions/*.instructions.md` (the VS Code user `prompts` folder for user folders), Claude Code `.claude/rules/*.md`. Top-level `rules/` and `instructions/` folders are read too.
+- Items from a client folder carry a **COPILOT** or **CLAUDE** chip and are only installed when that client is selected (others are skipped with an explanation). Namespaces of unknown clients are listed but not installable. An item that exists both at the top level and in a client folder is listed once, with a warning.
+
+### Changed
+- `plugin-lock.json` and the content fingerprint now know the `rule` kind. Existing lock files stay valid.
+
 ## [1.1.1] - 2026-11-12
 
 ### Fixed

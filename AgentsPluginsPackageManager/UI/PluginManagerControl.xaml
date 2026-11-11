@@ -217,6 +217,12 @@
                                                 <TextBlock Text="{Binding KindTag}" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Accent}" />
                                             </Border>
                                             <Border Style="{StaticResource TagChip}" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                    BorderBrush="{DynamicResource StrongStroke}" Background="Transparent"
+                                                    ToolTip="{Binding ClientTagToolTip}"
+                                                    Visibility="{Binding HasClientTag, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="{Binding ClientTag}" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Muted}" />
+                                            </Border>
+                                            <Border Style="{StaticResource TagChip}" Margin="6,0,0,0" VerticalAlignment="Center"
                                                     Visibility="{Binding IsInstalledHere, Converter={StaticResource BoolToVis}}">
                                                 <TextBlock Text="INSTALLED" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Accent}" />
                                             </Border>

@@ -41,11 +41,14 @@ namespace AgentsPluginsPackageManager.Services
         public string? SkillsDir { get; set; }
         public string? AgentsDir { get; set; }
         public string? PromptsDir { get; set; }
+        /// <summary>Rules / instructions (.github/instructions, .claude/rules).</summary>
+        public string? RulesDir { get; set; }
         public string? McpFile { get; set; }
         /// <summary>JSON property that holds the servers map ("mcpServers" or "servers").</summary>
         public string McpSection { get; set; } = "mcpServers";
         public string AgentSuffix { get; set; } = ".md";
         public string PromptSuffix { get; set; } = ".md";
+        public string RuleSuffix { get; set; } = ".md";
         public bool McpUsesHttpType { get; set; } = true;
         public string PayloadRoot { get; set; } = "";
 
@@ -60,6 +63,7 @@ namespace AgentsPluginsPackageManager.Services
                     l.SkillsDir = Path.Combine(baseDir, ".claude", "skills");
                     l.AgentsDir = Path.Combine(baseDir, ".claude", "agents");
                     l.PromptsDir = Path.Combine(baseDir, ".claude", "commands");
+                    l.RulesDir = Path.Combine(baseDir, ".claude", "rules");
                     l.McpFile = Path.Combine(baseDir, user ? ".claude.json" : ".mcp.json");
                     l.McpSection = "mcpServers";
                     break;
@@ -68,8 +72,10 @@ namespace AgentsPluginsPackageManager.Services
                     l.SkillsDir = Path.Combine(c, "skills");
                     l.AgentsDir = Path.Combine(c, "agents");
                     l.PromptsDir = Path.Combine(c, "prompts");
+                    l.RulesDir = Path.Combine(c, "instructions");
                     l.AgentSuffix = ".agent.md";
                     l.PromptSuffix = ".prompt.md";
+                    l.RuleSuffix = ".instructions.md";
                     l.McpFile = Path.Combine(baseDir, ".mcp.json");
                     l.McpSection = "servers";
                     break;
@@ -98,6 +104,12 @@ namespace AgentsPluginsPackageManager.Services
 
             foreach (var c in req.Components.Where(c => c.Installable))
             {
+                // Items from a client namespace folder (com.github.copilot/…) are only valid for that client.
+                if (c.Client != null && c.Client != LayoutClient(req.Layout))
+                {
+                    res.Skipped.Add($"{c.Name}: made for {(c.Client == "copilot" ? "GitHub Copilot" : "Claude Code")} ({c.Namespace}); choose that client to install it");
+                    continue;
+                }
                 switch (c.Kind)
                 {
                     case ComponentKind.Skill:
@@ -109,6 +121,9 @@ namespace AgentsPluginsPackageManager.Services
                     case ComponentKind.Prompt:
                         CopyFile(pkg, c, layout.PromptsDir, layout.PromptSuffix, req.Overwrite, res);
                         break;
+                    case ComponentKind.Rule:
+                        CopyFile(pkg, c, layout.RulesDir, layout.RuleSuffix, req.Overwrite, res);
+                        break;
                     case ComponentKind.McpServer:
                         mcp.Add(c);
                         break;
@@ -118,6 +133,9 @@ namespace AgentsPluginsPackageManager.Services
             if (mcp.Count > 0) InstallMcp(pkg, mcp, layout, req, res);
             return res;
         }
+
+        /// <summary>The client a layout is for ("copilot" / "claude"), or null for the agent-neutral layout.</summary>
+        public static string? LayoutClient(ClientLayout l) => l == ClientLayout.Copilot ? "copilot" : l == ClientLayout.Claude ? "claude" : null;
 
         private static void CopyDirectory(PluginPackage pkg, PluginComponent c, string? targetRoot, string target, bool overwrite, InstallResult res)
         {
@@ -155,6 +173,7 @@ namespace AgentsPluginsPackageManager.Services
                 case ComponentKind.Skill: return l.SkillsDir == null ? null : Path.Combine(l.SkillsDir, SafeName(name));
                 case ComponentKind.Agent: return l.AgentsDir == null ? null : Path.Combine(l.AgentsDir, SafeName(name) + l.AgentSuffix);
                 case ComponentKind.Prompt: return l.PromptsDir == null ? null : Path.Combine(l.PromptsDir, SafeName(name) + l.PromptSuffix);
+                case ComponentKind.Rule: return l.RulesDir == null ? null : Path.Combine(l.RulesDir, SafeName(name) + l.RuleSuffix);
                 default: return null;
             }
         }
@@ -163,6 +182,7 @@ namespace AgentsPluginsPackageManager.Services
         public static string PresenceOf(PluginPackage pkg, PluginComponent c, InstallScope scope, ClientLayout layout, string? repoRoot)
         {
             if (!c.Installable || (scope == InstallScope.Repository && string.IsNullOrEmpty(repoRoot))) return "";
+            if (c.Client != null && c.Client != LayoutClient(layout)) return "";   // made for another client
             var l = InstallLayout.Resolve(scope, layout, repoRoot);
             if (c.Kind == ComponentKind.McpServer)
             {
@@ -321,6 +341,9 @@ namespace AgentsPluginsPackageManager.Services
                         break;
                     case ComponentKind.Prompt:
                         if (layout.PromptsDir != null) target = Path.Combine(layout.PromptsDir, SafeName(item.Name) + layout.PromptSuffix);
+                        break;
+                    case ComponentKind.Rule:
+                        if (layout.RulesDir != null) target = Path.Combine(layout.RulesDir, SafeName(item.Name) + layout.RuleSuffix);
                         break;
                 }
                 if (target == null) { res.Skipped.Add($"{item.Name}: not supported by this client layout"); continue; }

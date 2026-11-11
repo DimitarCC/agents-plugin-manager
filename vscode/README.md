@@ -13,7 +13,7 @@ Open it from the Command Palette: **Agent Plugin Manager: Open**. It opens as an
   - **Sign in with VS Code:** uses the GitHub or Microsoft account you already use in VS Code (github.com and Azure DevOps).
   - **Single sign-on** through Git Credential Manager (browser sign-in for Entra ID, GitHub Enterprise / SAML SSO, Azure DevOps).
   - **Personal access tokens**, kept in VS Code's secret storage.
-- **See what is inside:** every package lists its skills, agents, prompts and MCP servers with descriptions and a preview of the content.
+- **See what is inside:** every package lists its skills, agents, prompts, rules and MCP servers with descriptions and a preview of the content. Client folders such as `com.github.copilot/` and `com.anthropic.claude/` are read too, and their items are installed only for that client.
 - **Install only what you need:** tick individual items, a whole package, or all packages.
 - **Choose where it goes:** user folders (all projects) or the open repository, for GitHub Copilot, Claude Code or an agent-neutral `.agents` layout.
 - **Shared with Visual Studio:** installs are recorded in a small `plugin-lock.json` at the destination (`~/.agents/` or `<repo>/.agents/`). The Visual Studio edition uses the same file, so each sees what the other installed. Commit the repository file to share it with your team.
@@ -26,8 +26,8 @@ Open it from the Command Palette: **Agent Plugin Manager: Open**. It opens as an
 
 | Client | User folders | This repository |
 |---|---|---|
-| GitHub Copilot | skills: `~/.copilot/skills`<br>agents and prompts: `<VS Code User>/prompts`<br>MCP: `<VS Code User>/mcp.json` | `.github/{skills,agents,prompts}`<br>MCP: `.vscode/mcp.json` |
-| Claude Code | `~/.claude/{skills,agents,commands}`, `~/.claude.json` | `.claude/{skills,agents,commands}`, `.mcp.json` |
+| GitHub Copilot | skills: `~/.copilot/skills`<br>agents, prompts and instructions: `<VS Code User>/prompts`<br>MCP: `<VS Code User>/mcp.json` | `.github/{skills,agents,prompts,instructions}`<br>MCP: `.vscode/mcp.json` |
+| Claude Code | `~/.claude/{skills,agents,commands,rules}`, `~/.claude.json` | `.claude/{skills,agents,commands,rules}`, `.mcp.json` |
 | Agent-neutral | `~/.agents/skills` | `.agents/skills` |
 
 MCP servers are never selected by default. They are merged into the existing config file, and a `.bak` copy is written first. A config file that contains comments is left untouched.

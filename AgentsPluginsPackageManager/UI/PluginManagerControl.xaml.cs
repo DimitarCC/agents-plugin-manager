@@ -406,7 +406,7 @@ namespace AgentsPluginsPackageManager.UI
             ShowUpdateBanner(p);
 
             var view = new ListCollectionView(p.Components);
-            view.SortDescriptions.Add(new SortDescription(nameof(PluginComponent.Kind), ListSortDirection.Ascending));
+            view.SortDescriptions.Add(new SortDescription(nameof(PluginComponent.KindOrder), ListSortDirection.Ascending));
             view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(PluginComponent.KindLabel)));
             ComponentList.ItemsSource = view;
             RefreshInstalledMarks();
@@ -468,6 +468,7 @@ namespace AgentsPluginsPackageManager.UI
             if (l.SkillsDir != null) sb.AppendLine("skills   " + l.SkillsDir);
             if (l.AgentsDir != null) sb.AppendLine("agents   " + l.AgentsDir);
             if (l.PromptsDir != null) sb.AppendLine("prompts  " + l.PromptsDir);
+            if (l.RulesDir != null) sb.AppendLine("rules    " + l.RulesDir);
             if (l.McpFile != null) sb.AppendLine("mcp      " + l.McpFile);
             sb.AppendLine("lock     " + LockStore.LockPath(scope, repo));
             DestinationText.Text = sb.ToString().TrimEnd();

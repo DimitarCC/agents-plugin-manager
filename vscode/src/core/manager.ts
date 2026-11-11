@@ -53,6 +53,9 @@ export interface ViewComponent {
   relativePath: string;
   installable: boolean;
   installedHere: boolean;
+  /** Set for items from a client namespace folder: the only client they can be installed for. */
+  client?: 'copilot' | 'claude';
+  namespace?: string;
 }
 
 export interface ViewPackage {
@@ -96,6 +99,7 @@ function summarize(p: PluginPackage): string {
   if (n('skill') > 0) { parts.push(`${n('skill')} skill${n('skill') === 1 ? '' : 's'}`); }
   if (n('agent') > 0) { parts.push(`${n('agent')} agent${n('agent') === 1 ? '' : 's'}`); }
   if (n('prompt') > 0) { parts.push(`${n('prompt')} prompt${n('prompt') === 1 ? '' : 's'}`); }
+  if (n('rule') > 0) { parts.push(`${n('rule')} rule${n('rule') === 1 ? '' : 's'}`); }
   if (n('mcp') > 0) { parts.push(`${n('mcp')} MCP`); }
   return parts.length === 0 ? 'no components' : parts.join(' · ');
 }
@@ -168,6 +172,7 @@ export class Manager {
     if (l.skillsDir) { lines.push('skills   ' + l.skillsDir); }
     if (l.agentsDir) { lines.push('agents   ' + l.agentsDir); }
     if (l.promptsDir) { lines.push('prompts  ' + l.promptsDir); }
+    if (l.rulesDir) { lines.push('rules    ' + l.rulesDir); }
     if (l.mcpFile) { lines.push('mcp      ' + l.mcpFile); }
     lines.push('lock     ' + this.lock.lockPath(this.settings.scope, repo));
     return lines;
@@ -525,6 +530,7 @@ export class Manager {
         components: comps.map(c => ({
           kind: c.kind, name: c.name, description: c.description, relativePath: c.relativePath, installable: c.installable,
           installedHere: !!here && here.components.some(ic => sameComponent(ic, c)),
+          client: c.client, namespace: c.namespace,
         })),
       };
     });

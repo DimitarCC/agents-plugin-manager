@@ -143,6 +143,7 @@ input::placeholder { color: var(--muted); }
   background: var(--accent-soft); border: 1px solid var(--accent-text); color: var(--accent-text); line-height: 16px;
 }
 .tag.big { font-size: 12px; padding: 1px 9px; line-height: 18px; }
+.tag.client { background: transparent; color: var(--muted); border-color: var(--strong); }
 .tag.warn { background: color-mix(in srgb, var(--bg), var(--warn) 18%); border-color: var(--warn); color: var(--warn); }
 
 /* progress */

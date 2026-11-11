@@ -156,7 +156,7 @@ function parseLayout(v: unknown): ClientLayout {
 }
 
 function parseKind(v: unknown): ComponentKind {
-  return v === 'agent' || v === 'prompt' || v === 'mcp' || v === 'hook' ? v : 'skill';
+  return v === 'agent' || v === 'prompt' || v === 'rule' || v === 'mcp' || v === 'hook' ? v : 'skill';
 }
 
 function toJson(r: InstallRecord): Record<string, unknown> {

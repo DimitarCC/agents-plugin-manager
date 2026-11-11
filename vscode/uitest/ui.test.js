@@ -36,7 +36,10 @@ const state = {
       components: [comp('skill', 'review-checklist', 'Use when reviewing', { installedHere: true }), comp('skill', 'commit-message', 'Commit msgs'), comp('agent', 'reviewer', 'Reviewer agent')] },
     { name: 'mcp-demo', version: '0.1.0', description: '', author: '', license: '', homepage: '', keywords: [], warnings: ['plugin.json has no $schema'],
       summary: '1 skill · 2 MCP', installedSummary: '', hasUpdate: false, updateText: '',
-      components: [comp('skill', 'using-mcp-demo', 'Demo'), comp('mcp', 'local-echo', 'stdio: ./echo'), comp('hook', 'com.example.client/hooks', 'not installable')] },
+      components: [comp('skill', 'using-mcp-demo', 'Demo'), comp('mcp', 'local-echo', 'stdio: ./echo'),
+        comp('agent', 'odd', 'Agent of an unknown client', { namespace: 'com.example.client', installable: false }),
+        comp('rule', 'style', 'Copilot coding style', { client: 'copilot', namespace: 'com.github.copilot' }),
+        comp('hook', 'com.example.client/hooks', 'not installable')] },
   ],
 };
 
@@ -89,7 +92,7 @@ change($('detail').querySelectorAll('.cc')[0], false);
 ok($('btnInstall').textContent === 'Install 2 selected', 'unticking one item => 2');
 ok($('pkgList').querySelectorAll('.pc')[0].indeterminate === true, 'package checkbox shows partial state');
 change($('selAll'), true);
-ok($('btnInstall').textContent === 'Install 5 selected', 'select all packages => 5 installable items (hook excluded)');
+ok($('btnInstall').textContent === 'Install 6 selected', 'select all packages => 6 installable items (hook and unknown-client item excluded)');
 ok($('detail').querySelector('.cc:disabled') === null || true, 'ok');
 change($('selAll'), false);
 ok($('btnInstall').disabled, 'select all off => nothing selected');
@@ -99,6 +102,11 @@ click($('pkgList').querySelectorAll('.pkg')[1]);
 ok($('detail').querySelector('h2').textContent === 'mcp-demo', 'clicking a card shows that package');
 ok($('detail').textContent.includes('No description provided.') && $('detail').textContent.includes('no $schema'), 'description placeholder + warning in details');
 ok($('detail').querySelector('.cc:disabled') !== null, 'hook row checkbox disabled');
+ok($('detail').textContent.includes('RULES / INSTRUCTIONS'), 'rules group shown');
+const clientTags = Array.from($('detail').querySelectorAll('.tag.client')).map(t => t.textContent);
+ok(clientTags.includes('COPILOT') && clientTags.includes('com.example.client'), 'client chips: COPILOT for a Copilot item, the namespace for an unknown client');
+ok(Array.from($('detail').querySelectorAll('.comp')).find(r => r.dataset.name === 'odd').querySelector('.cc').disabled, 'item of an unknown client cannot be ticked');
+ok(Array.from($('detail').querySelectorAll('.comp')).find(r => r.dataset.name === 'style').querySelector('.tag').textContent === 'RULE', 'RULE tag');
 click($('detail').querySelectorAll('.comp')[1]);
 const pv = posted.filter(m => m.type === 'preview').pop();
 ok(pv && pv.pkg === 'mcp-demo' && pv.kind === 'mcp' && pv.name === 'local-echo', 'clicking a component requests its preview');

@@ -64,10 +64,69 @@ namespace AgentsPluginsPackageManager.Services
             return File.Exists(b) ? b : null;
         }
 
-        private static bool LooksLikePlugin(string dir) =>
-            Directory.Exists(Path.Combine(dir, "skills")) || Directory.Exists(Path.Combine(dir, "agents"))
-            || Directory.Exists(Path.Combine(dir, "prompts")) || Directory.Exists(Path.Combine(dir, "commands"))
-            || File.Exists(Path.Combine(dir, "mcp.json"));
+        private static bool LooksLikePlugin(string dir)
+        {
+            if (new[] { "skills", "agents", "prompts", "commands", "rules", "instructions" }.Any(d => Directory.Exists(Path.Combine(dir, d)))
+                || File.Exists(Path.Combine(dir, "mcp.json"))) return true;
+            try { return Directory.GetDirectories(dir).Any(d => IsNamespaceDir(Path.GetFileName(d)) && ClientOf(Path.GetFileName(d)) != null); }
+            catch { return false; }
+        }
+
+        /// <summary>A namespace folder is a top-level folder named like a reverse domain: com.github.copilot, com.example.client, …</summary>
+        private static bool IsNamespaceDir(string name) =>
+            !name.StartsWith(".", StringComparison.Ordinal) && name.IndexOf('.') > 0 && name != "node_modules";
+
+        /// <summary>The client a namespace folder is made for: "copilot", "claude", or null when not recognised.</summary>
+        public static string? ClientOf(string ns)
+        {
+            var n = ns.ToLowerInvariant();
+            if (n.Contains("copilot")) return "copilot";
+            if (n.Contains("claude") || n.Contains("anthropic")) return "claude";
+            return null;
+        }
+
+        /// <summary>Where an item came from: the portable top-level folders, or a client namespace folder.</summary>
+        private sealed class Origin
+        {
+            public string Prefix = "";
+            public string? Namespace;
+            public string? Client;
+            /// <summary>False for a namespace of a client this tool doesn't know how to install for.</summary>
+            public bool Installable = true;
+        }
+
+        private static readonly Origin Portable = new Origin();
+
+        private static void Add(PluginPackage pkg, PluginComponent c)
+        {
+            if (pkg.Components.Any(x => x.Kind == c.Kind && x.Name == c.Name))
+            {
+                pkg.Warnings.Add($"{LockFormat.KindToString(c.Kind)} \"{c.Name}\" exists more than once ({c.RelativePath}); only the first is listed.");
+                return;
+            }
+            pkg.Components.Add(c);
+        }
+
+        /// <summary>Items in client namespace folders, e.g. com.github.copilot/agents and com.github.copilot/rules.</summary>
+        private static void LoadNamespaces(PluginPackage pkg, string dir)
+        {
+            foreach (var nsPath in Directory.GetDirectories(dir).OrderBy(x => Path.GetFileName(x), StringComparer.OrdinalIgnoreCase))
+            {
+                var ns = Path.GetFileName(nsPath);
+                if (!IsNamespaceDir(ns)) continue;
+                var client = ClientOf(ns);
+                var origin = new Origin { Prefix = ns + "/", Namespace = ns, Client = client, Installable = client != null };
+                int before = pkg.Components.Count;
+                LoadSkills(pkg, nsPath, origin);
+                LoadMarkdownFolder(pkg, nsPath, "agents", ComponentKind.Agent, origin);
+                LoadMarkdownFolder(pkg, nsPath, "prompts", ComponentKind.Prompt, origin);
+                LoadMarkdownFolder(pkg, nsPath, "commands", ComponentKind.Prompt, origin);
+                LoadMarkdownFolder(pkg, nsPath, "rules", ComponentKind.Rule, origin);
+                LoadMarkdownFolder(pkg, nsPath, "instructions", ComponentKind.Rule, origin);
+                if (client == null && pkg.Components.Count > before)
+                    pkg.Warnings.Add(ns + ": client not recognised; its items are listed but can't be installed.");
+            }
+        }
 
         public static PluginPackage Load(string dir)
         {
@@ -88,18 +147,23 @@ namespace AgentsPluginsPackageManager.Services
                 if (j["$schema"] == null) pkg.Warnings.Add("plugin.json has no $schema (required by the Agent Plugins v1 spec).");
             }
 
-            LoadSkills(pkg, dir);
-            LoadMarkdownFolder(pkg, dir, "agents", ComponentKind.Agent);
-            LoadMarkdownFolder(pkg, dir, "prompts", ComponentKind.Prompt);
-            LoadMarkdownFolder(pkg, dir, "commands", ComponentKind.Prompt);
+            // Portable, top-level folders
+            LoadSkills(pkg, dir, Portable);
+            LoadMarkdownFolder(pkg, dir, "agents", ComponentKind.Agent, Portable);
+            LoadMarkdownFolder(pkg, dir, "prompts", ComponentKind.Prompt, Portable);
+            LoadMarkdownFolder(pkg, dir, "commands", ComponentKind.Prompt, Portable);
+            LoadMarkdownFolder(pkg, dir, "rules", ComponentKind.Rule, Portable);
+            LoadMarkdownFolder(pkg, dir, "instructions", ComponentKind.Rule, Portable);
             LoadMcp(pkg, dir);
+            // Client namespace folders (com.github.copilot/, com.anthropic.claude/, …)
+            LoadNamespaces(pkg, dir);
             LoadHooks(pkg, dir);
 
             pkg.Attach();
             return pkg;
         }
 
-        private static void LoadSkills(PluginPackage pkg, string dir)
+        private static void LoadSkills(PluginPackage pkg, string dir, Origin origin)
         {
             var skills = Path.Combine(dir, "skills");
             if (!Directory.Exists(skills)) return;
@@ -115,19 +179,22 @@ namespace AgentsPluginsPackageManager.Services
                     if (Directory.Exists(Path.Combine(sd, sub))) extras.Add(sub + "/");
                 var preview = text.Length > MaxPreviewChars ? text.Substring(0, MaxPreviewChars) + "\n…" : text;
                 if (extras.Count > 0) preview = "[bundled: " + string.Join(", ", extras) + "]\n\n" + preview;
-                pkg.Components.Add(new PluginComponent
+                Add(pkg, new PluginComponent
                 {
                     Kind = ComponentKind.Skill,
                     Name = folder,
                     Description = fm.TryGetValue("description", out var d) ? d : "",
-                    RelativePath = "skills/" + folder,
+                    RelativePath = origin.Prefix + "skills/" + folder,
                     IsDirectory = true,
+                    Installable = origin.Installable,
                     Preview = preview,
+                    Client = origin.Client,
+                    Namespace = origin.Namespace,
                 });
             }
         }
 
-        private static void LoadMarkdownFolder(PluginPackage pkg, string dir, string folder, ComponentKind kind)
+        private static void LoadMarkdownFolder(PluginPackage pkg, string dir, string folder, ComponentKind kind, Origin origin)
         {
             var d = Path.Combine(dir, folder);
             if (!Directory.Exists(d)) return;
@@ -136,15 +203,19 @@ namespace AgentsPluginsPackageManager.Services
                 var text = ReadText(f);
                 var fm = FrontMatter.Parse(text);
                 var name = Path.GetFileNameWithoutExtension(f);
-                if (name.EndsWith(".agent", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".prompt", StringComparison.OrdinalIgnoreCase))
+                if (name.EndsWith(".agent", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".prompt", StringComparison.OrdinalIgnoreCase)
+                    || name.EndsWith(".instructions", StringComparison.OrdinalIgnoreCase))
                     name = Path.GetFileNameWithoutExtension(name);
-                pkg.Components.Add(new PluginComponent
+                Add(pkg, new PluginComponent
                 {
                     Kind = kind,
                     Name = name,
                     Description = fm.TryGetValue("description", out var desc) ? desc : "",
-                    RelativePath = folder + "/" + Path.GetFileName(f),
+                    RelativePath = origin.Prefix + folder + "/" + Path.GetFileName(f),
+                    Installable = origin.Installable,
                     Preview = text.Length > MaxPreviewChars ? text.Substring(0, MaxPreviewChars) + "\n…" : text,
+                    Client = origin.Client,
+                    Namespace = origin.Namespace,
                 });
             }
         }
@@ -170,7 +241,7 @@ namespace AgentsPluginsPackageManager.Services
                 var shown = (JObject)def.DeepClone();
                 if (shown["env"] is JObject env) // never preview secrets
                     foreach (var p in env.Properties().ToList()) p.Value = "…";
-                pkg.Components.Add(new PluginComponent
+                Add(pkg, new PluginComponent
                 {
                     Kind = ComponentKind.McpServer,
                     Name = prop.Name,
@@ -190,7 +261,7 @@ namespace AgentsPluginsPackageManager.Services
                 var hooks = Path.Combine(d, "hooks");
                 if (n.Equals("hooks", StringComparison.OrdinalIgnoreCase) || (n.IndexOf('.') > 0 && Directory.Exists(hooks)))
                 {
-                    pkg.Components.Add(new PluginComponent
+                    Add(pkg, new PluginComponent
                     {
                         Kind = ComponentKind.Hook,
                         Name = n.Equals("hooks", StringComparison.OrdinalIgnoreCase) ? "hooks" : n + "/hooks",

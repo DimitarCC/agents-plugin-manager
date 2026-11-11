@@ -5,9 +5,10 @@
   const vscode = acquireVsCodeApi();
   const SEP = '\u0001';
   const KIND_LABEL = {
-    skill: 'Skills', mcp: 'MCP servers', agent: 'Agents', prompt: 'Prompts / commands', hook: 'Hooks & other (not installable)',
+    skill: 'Skills', mcp: 'MCP servers', agent: 'Agents', prompt: 'Prompts / commands', rule: 'Rules / instructions', hook: 'Hooks & other (not installable)',
   };
-  const KIND_TAG = { skill: 'SKILL', mcp: 'MCP', agent: 'AGENT', prompt: 'PROMPT', hook: 'HOOK' };
+  const KIND_TAG = { skill: 'SKILL', mcp: 'MCP', agent: 'AGENT', prompt: 'PROMPT', rule: 'RULE', hook: 'HOOK' };
+  const CLIENT_NAME = { copilot: 'GitHub Copilot', claude: 'Claude Code' };
 
   /** @type {any} latest state from the extension host */
   let S = null;
@@ -141,7 +142,7 @@
       comps += `<div class="comp${k === previewKey ? ' selected' : ''}" data-kind="${esc(c.kind)}" data-name="${esc(c.name)}">
         <label class="check"><input type="checkbox" class="cc"${sel.has(k) ? ' checked' : ''}${c.installable ? '' : ' disabled'}><span class="box"></span></label>
         <div class="cbody">
-          <div class="crow"><b>${esc(c.name)}</b><span class="tag">${KIND_TAG[c.kind] || ''}</span>${c.installedHere ? '<span class="tag">INSTALLED</span>' : ''}${ps ? `<span class="tag warn" title="Found at this destination but not tracked by Agent Plugin Manager">${ps === 'differs' ? 'PRESENT · DIFFERS' : 'PRESENT'}</span>` : ''}</div>
+          <div class="crow"><b>${esc(c.name)}</b><span class="tag">${KIND_TAG[c.kind] || ''}</span>${c.client ? `<span class="tag client" title="Made for ${esc(CLIENT_NAME[c.client])} (${esc(c.namespace)}). Only installed when that client is selected.">${esc(c.client.toUpperCase())}</span>` : (c.namespace && !c.installable ? `<span class="tag client" title="${esc(c.namespace)}: this tool does not know that client, so the item can't be installed.">${esc(c.namespace)}</span>` : '')}${c.installedHere ? '<span class="tag">INSTALLED</span>' : ''}${ps ? `<span class="tag warn" title="Found at this destination but not tracked by Agent Plugin Manager">${ps === 'differs' ? 'PRESENT · DIFFERS' : 'PRESENT'}</span>` : ''}</div>
           <div class="cdesc">${esc(c.description)}</div>
         </div>
         ${c.installedHere ? '<button class="tiny" data-a="uninstallItem" title="Remove this item from the selected destination">Uninstall</button>' : ''}

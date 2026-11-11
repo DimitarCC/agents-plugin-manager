@@ -10,7 +10,10 @@ export type AuthMode = 'none' | 'sso' | 'vscode' | 'pat';
 
 export type InstallScope = 'user' | 'repo';
 export type ClientLayout = 'copilot' | 'claude' | 'agents';
-export type ComponentKind = 'skill' | 'agent' | 'prompt' | 'mcp' | 'hook';
+export type ComponentKind = 'skill' | 'agent' | 'prompt' | 'rule' | 'mcp' | 'hook';
+
+/** Clients that have their own namespace folders in a plugin (com.github.copilot, com.anthropic.claude, …). */
+export type ClientId = 'copilot' | 'claude';
 
 export interface PluginSource {
   id: string;
@@ -44,6 +47,18 @@ export interface PluginComponent {
   preview: string;
   /** Raw MCP server definition (only for kind === 'mcp'). */
   mcp?: Record<string, any>;
+  /** For items found in a client namespace folder (e.g. com.github.copilot/agents): the client they are made for. */
+  client?: ClientId;
+  /** The namespace folder the item came from, e.g. "com.github.copilot". Unset for the portable top-level folders. */
+  namespace?: string;
+}
+
+export function layoutClient(layout: ClientLayout): ClientId | undefined {
+  return layout === 'copilot' ? 'copilot' : layout === 'claude' ? 'claude' : undefined;
+}
+
+export function clientLabel(c: ClientId): string {
+  return c === 'copilot' ? 'GitHub Copilot' : 'Claude Code';
 }
 
 export interface PluginPackage {

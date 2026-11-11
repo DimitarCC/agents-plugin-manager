@@ -47,7 +47,7 @@ The file is deleted when the last entry is removed.
 | `version` | Package version at install time. Empty when unknown (e.g. adopted items that differ from the package). |
 | `fingerprint` | Content hash (below) of the installed components as they were in the package. |
 | `layout` | `copilot`, `claude` or `agents`. |
-| `components[].kind` | `skill`, `agent`, `prompt` or `mcp`. |
+| `components[].kind` | `skill`, `agent`, `prompt`, `rule` or `mcp`. |
 | `installedAt`, `installedBy` | UTC timestamp and `<tool> <version>` of the last writer. |
 
 An entry is unique by (`source`, `package`, `layout`). Unknown fields must be preserved by readers where practical
@@ -74,7 +74,7 @@ Shared test vectors: [`shared/test-vectors.json`](../shared/test-vectors.json).
 ## Fingerprint
 
 `fingerprint = base64(sha1(utf8(text)))`, where `text` is the concatenation, for every component sorted by kind
-(`skill`, `mcp`, `agent`, `prompt`, `hook`) and then by name (ordinal, case-sensitive), of:
+(`skill`, `mcp`, `agent`, `prompt`, `hook`, `rule`) and then by name (ordinal, case-sensitive), of:
 
 ```
 <kind>:<name>\n
@@ -86,7 +86,7 @@ Content block:
   whitespace, strings escaped as `\"`, `\\` and `\uXXXX` (lower-case hex) for every code unit below 0x20 or above 0x7e.
 - **Skill (directory):** for every file below the directory, sorted ordinally by relative path:
   `/<relative path with / separators>:<base64(sha1(bytes with 0x0D removed))>\n`.
-- **Agent / prompt (single file):** `:<base64(sha1(bytes with 0x0D removed))>\n`.
+- **Agent / prompt / rule (single file):** `:<base64(sha1(bytes with 0x0D removed))>\n`.
 
 Removing `0x0D` makes CRLF and LF checkouts hash the same.
 

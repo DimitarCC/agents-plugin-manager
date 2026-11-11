@@ -3,6 +3,17 @@
 All notable changes to Agent Plugin Manager are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-11-13
+
+### Added
+- **Client folders.** Plugins that keep client-specific files in a reverse-domain folder such as `com.github.copilot/` or `com.anthropic.claude/` are now read. Inside such a folder `agents/`, `prompts/`, `commands/`, `rules/` (or `instructions/`) and `skills/` are listed and installed.
+- **Rules / instructions** are a new kind of item, with their own group in the package details: GitHub Copilot `.github/instructions/*.instructions.md` (`~/.copilot/instructions` for user folders), Claude Code `.claude/rules/*.md`. Top-level `rules/` and `instructions/` folders are read too.
+- Items from a client folder carry a **COPILOT** or **CLAUDE** chip and are only installed when that client is selected (others are skipped with an explanation). Namespaces of unknown clients are listed but not installable. An item that exists both at the top level and in a client folder is listed once, with a warning.
+- Shared test vectors and a sample plugin with client folders, checked identically by both editions.
+
+### Changed
+- `plugin-lock.json` and the content fingerprint now know the `rule` kind (see [docs/plugin-lock.md](docs/plugin-lock.md)). Existing lock files stay valid.
+
 ## [1.1.1] - 2026-11-12
 
 ### Fixed
@@ -40,6 +51,7 @@ First public release.
 - **Theming:** WinUI-style interface that follows the Visual Studio theme (light, dark, blue, high contrast).
 - Extension icon, preview image and Tools menu icon.
 
+[1.2.0]: https://github.com/DimitarCC/agents-plugin-manager/releases/tag/v1.2.0
 [1.1.1]: https://github.com/DimitarCC/agents-plugin-manager/releases/tag/v1.1.1
 [1.1.0]: https://github.com/DimitarCC/agents-plugin-manager/releases/tag/v1.1.0
 [1.0.2]: https://github.com/DimitarCC/agents-plugin-manager/releases/tag/v1.0.2

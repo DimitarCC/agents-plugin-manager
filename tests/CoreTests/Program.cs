@@ -153,6 +153,50 @@ namespace AgentsPluginsPackageManager.CoreTests
             Check(fp == (string)fixture["fingerprint"]!, "fingerprint of the sample plugin equals the golden value (" + fp + ")");
             Check(ContentHash.Fingerprint(fxPkg, fxPkg.Components.AsEnumerable().Reverse()) == fp, "fingerprint ignores component order");
 
+            Section("client namespace folders (com.github.copilot/agents, rules, …)");
+            var samplePkg = PluginScanner.Discover(Path.Combine(_shared, "fixtures", "sample-plugin"))[0];
+            Func<string, string?, string, string, bool, string> fmt = (kind, name, p, client, inst) => kind + ":" + name + ":" + p + ":" + client + ":" + inst;
+            var actualScan = samplePkg.Components.Where(c => c.Kind != ComponentKind.Hook)
+                .Select(c => fmt(LockFormat.KindToString(c.Kind), c.Name, c.RelativePath, c.Client ?? "", c.Installable)).OrderBy(s => s, StringComparer.Ordinal).ToList();
+            var expectedScan = ((JArray)vectors["scan"]!["components"]!)
+                .Select(c => fmt((string)c["kind"]!, (string)c["name"]!, (string)c["path"]!, (string?)c["client"] ?? "", (bool)c["installable"]!)).OrderBy(s => s, StringComparer.Ordinal).ToList();
+            Check(actualScan.SequenceEqual(expectedScan), "scan of the sample plugin equals the shared expectation (" + actualScan.Count + " items)");
+            if (!actualScan.SequenceEqual(expectedScan)) { Console.WriteLine("    actual:   " + string.Join(" | ", actualScan)); Console.WriteLine("    expected: " + string.Join(" | ", expectedScan)); }
+            Check(samplePkg.Warnings.Any(w => w.Contains("com.example.client") && w.Contains("not recognised")), "unknown client namespace is reported");
+
+            Func<ClientLayout, string, PluginInstaller_Result> installSample = (layout, repoName) =>
+            {
+                var root = Repo(repoName);
+                var r = PluginInstaller.Install(new InstallRequest { Package = samplePkg, Components = samplePkg.Components.Where(c => c.Installable).ToList(), Scope = InstallScope.Repository, Layout = layout, RepoRoot = root });
+                return new PluginInstaller_Result { Root = root, Result = r };
+            };
+            var nsCopilot = installSample(ClientLayout.Copilot, "ns-copilot");
+            Check(File.Exists(Path.Combine(nsCopilot.Root, ".github", "agents", "pilot.agent.md")), "Copilot agent from com.github.copilot/agents installed");
+            Check(File.Exists(Path.Combine(nsCopilot.Root, ".github", "instructions", "style.instructions.md")), "Copilot rule → .github/instructions/*.instructions.md");
+            Check(File.Exists(Path.Combine(nsCopilot.Root, ".github", "agents", "helper.agent.md")), "portable agent installs too");
+            Check(!Directory.Exists(Path.Combine(nsCopilot.Root, ".claude")), "nothing Claude-specific written");
+            var skippedText = string.Join("\n", nsCopilot.Result.Skipped);
+            Check(skippedText.Contains("ship") && skippedText.Contains("tone") && skippedText.Contains("made for Claude Code"), "Claude items skipped with an explanation");
+            var nsClaude = installSample(ClientLayout.Claude, "ns-claude");
+            Check(File.Exists(Path.Combine(nsClaude.Root, ".claude", "commands", "ship.md")) && File.Exists(Path.Combine(nsClaude.Root, ".claude", "rules", "tone.md")), "Claude command and rule installed (.claude/commands, .claude/rules)");
+            Check(!Directory.Exists(Path.Combine(nsClaude.Root, ".github")), "nothing Copilot-specific written");
+            var nsNeutral = installSample(ClientLayout.AgentsNeutral, "ns-neutral");
+            Check(nsNeutral.Result.InstalledComponents.All(c => c.Kind == ComponentKind.Skill), "agent-neutral layout only takes skills");
+            var styleC = samplePkg.Components.First(c => c.Name == "style");
+            var toneC = samplePkg.Components.First(c => c.Name == "tone");
+            Check(PluginInstaller.PresenceOf(samplePkg, styleC, InstallScope.Repository, ClientLayout.Copilot, nsCopilot.Root) == "same", "installed rule is present and identical");
+            Check(PluginInstaller.PresenceOf(samplePkg, toneC, InstallScope.Repository, ClientLayout.Copilot, nsCopilot.Root) == "", "a Claude rule is never 'present' for Copilot");
+            var oddC = samplePkg.Components.First(c => c.Name == "odd");
+            Check(!oddC.Installable && PluginInstaller.Install(new InstallRequest { Package = samplePkg, Components = new List<PluginComponent> { oddC }, Scope = InstallScope.Repository, Layout = ClientLayout.Copilot, RepoRoot = Repo("ns-odd") }).InstalledComponents.Count == 0, "unknown client's items are never installed");
+            var ruleRec = new InstallRecord { PackageName = "p", SourceKey = "s", Scope = InstallScope.Repository, RepoRoot = nsCopilot.Root, Layout = ClientLayout.Copilot, Components = new List<InstalledComponent> { new InstalledComponent { Kind = ComponentKind.Rule, Name = "style" } } };
+            Check(PluginInstaller.Uninstall(ruleRec, ruleRec.Components).RemovedComponents.Count == 1 && !File.Exists(Path.Combine(nsCopilot.Root, ".github", "instructions", "style.instructions.md")), "rule uninstalls");
+            var dupDir = Path.Combine(_tmp, "dup-plugin");
+            Write(Path.Combine(dupDir, "plugin.json"), Manifest("dup", "1.0.0", "x"));
+            Write(Path.Combine(dupDir, "agents", "same.md"), "---\ndescription: portable\n---\n");
+            Write(Path.Combine(dupDir, "com.github.copilot", "agents", "same.md"), "---\ndescription: copilot\n---\n");
+            var dupPkg = PluginScanner.Discover(dupDir)[0];
+            Check(dupPkg.Components.Count(c => c.Name == "same") == 1 && dupPkg.Warnings.Any(w => w.Contains("more than once")), "duplicate names are reported once");
+
             Section("lock file: golden file written by the TypeScript edition");
             var golden = Lf(File.ReadAllText(Path.Combine(_shared, "fixtures", "plugin-lock.sample.json"), Encoding.UTF8));
             var gRepo = Repo("golden-repo");
@@ -273,6 +317,12 @@ namespace AgentsPluginsPackageManager.CoreTests
             Check(LockStore.MigrateLegacy(new PluginSource[0]) == 0, "second run does nothing");
 
             await Task.CompletedTask;
+        }
+
+        private sealed class PluginInstaller_Result
+        {
+            public string Root = "";
+            public InstallResult Result = null!;
         }
 
         private static void CopyDir(string src, string dst)

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
-    <Identity Id="AgentsPluginsPackageManager.3b52e97e-b5bd-4b93-8e8d-2f1685f2d6ae" Version="1.1.1" Language="en-US" Publisher="Dimitar Tsenev" />
+    <Identity Id="AgentsPluginsPackageManager.3b52e97e-b5bd-4b93-8e8d-2f1685f2d6ae" Version="1.2.0" Language="en-US" Publisher="Dimitar Tsenev" />
     <DisplayName>Agent Plugin Manager</DisplayName>
     <Description>Browse and install Agent Plugins (agent-plugins.org) — skills, agents, prompts and MCP servers — from public or SSO-protected enterprise repositories into your user folders or the current repository.</Description>
     <MoreInfo>https://github.com/DimitarCC/agents-plugin-manager</MoreInfo>

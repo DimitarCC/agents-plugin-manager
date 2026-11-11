@@ -20,6 +20,7 @@ namespace AgentsPluginsPackageManager.Services
                 case ComponentKind.McpServer: return "mcp";
                 case ComponentKind.Agent: return "agent";
                 case ComponentKind.Prompt: return "prompt";
+                case ComponentKind.Rule: return "rule";
                 default: return "hook";
             }
         }
@@ -31,6 +32,7 @@ namespace AgentsPluginsPackageManager.Services
                 case "mcp": return ComponentKind.McpServer;
                 case "agent": return ComponentKind.Agent;
                 case "prompt": return ComponentKind.Prompt;
+                case "rule": return ComponentKind.Rule;
                 case "hook": return ComponentKind.Hook;
                 default: return ComponentKind.Skill;
             }
