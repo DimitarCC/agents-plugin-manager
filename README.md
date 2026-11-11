@@ -5,6 +5,11 @@
 Browse and install [Agent Plugins](https://agent-plugins.org/) packages from inside Visual Studio.
 Open it from **Tools > Agent Plugin Manager...**
 
+## Editions
+This repository contains two editions with the same features and layout:
+- **Visual Studio 2026** (`AgentsPluginsPackageManager/`): a VSIX built with the Visual Studio SDK.
+- **VS Code** (`vscode/`): a TypeScript extension that shows the same UI in an editor tab. See [vscode/README.md](vscode/README.md).
+
 ## Sources
 A source is a git repository (or local folder) containing one or more plugin packages
 (a folder with `plugin.json`, `skills/<name>/SKILL.md`, `mcp.json`; `agents/`, `prompts/` and `commands/`

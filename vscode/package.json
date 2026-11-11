@@ -1,0 +1,63 @@
+{
+  "name": "agent-plugin-manager",
+  "displayName": "Agent Plugin Manager",
+  "description": "Browse and install Agent Plugins (agent-plugins.org): skills, agents, prompts and MCP servers from public or SSO-protected repositories into your user folders or the current repository.",
+  "version": "1.0.0",
+  "publisher": "DimitarTsenev",
+  "license": "SEE LICENSE IN LICENSE",
+  "icon": "resources/icon.png",
+  "homepage": "https://github.com/DimitarCC/agents-plugin-manager",
+  "bugs": {
+    "url": "https://github.com/DimitarCC/agents-plugin-manager/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DimitarCC/agents-plugin-manager.git",
+    "directory": "vscode"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "agent",
+    "plugins",
+    "skills",
+    "mcp",
+    "copilot",
+    "claude"
+  ],
+  "main": "./out/src/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "agentPluginManager.open",
+        "title": "Open",
+        "category": "Agent Plugin Manager"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node --test out/test/",
+    "package": "npm run compile && vsce package --no-dependencies",
+    "vscode:prepublish": "npm run compile"
+  },
+  "overrides": {
+    "https-proxy-agent": "7.0.6",
+    "http-proxy-agent": "7.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^2.32.0",
+    "typescript": "^5.5.0"
+  }
+}

@@ -1,0 +1,49 @@
+# Agent Plugin Manager
+
+Browse and install [Agent Plugins](https://agent-plugins.org/) packages without leaving VS Code: pick a package from a repository, see what is inside it, choose exactly what to install and where it goes.
+
+> Unofficial. Not affiliated with or endorsed by Anthropic, GitHub, Microsoft or agent-plugins.org. Product names are used only to describe compatibility.
+
+Open it from the Command Palette: **Agent Plugin Manager: Open**. It opens as an editor tab.
+
+## Features
+
+- **Any repository as a source:** a Git repo (full URL or GitHub `owner/repo`, optional branch, tag or commit) or a local folder, containing one plugin or many.
+- **Private and enterprise repos:**
+  - **Sign in with VS Code:** uses the GitHub or Microsoft account you already use in VS Code (github.com and Azure DevOps).
+  - **Single sign-on** through Git Credential Manager (browser sign-in for Entra ID, GitHub Enterprise / SAML SSO, Azure DevOps).
+  - **Personal access tokens**, kept in VS Code's secret storage.
+- **See what is inside:** every package lists its skills, agents, prompts and MCP servers with descriptions and a preview of the content.
+- **Install only what you need:** tick individual items, a whole package, or all packages.
+- **Choose where it goes:** user folders (all projects) or the open repository, for GitHub Copilot, Claude Code or an agent-neutral `.agents` layout.
+- **Updates:** installed packages are compared with the source on every refresh. Update manually, or turn on auto-update (also checks shortly after VS Code starts).
+- **Uninstall:** remove a single item or a whole package.
+- **Follows your theme:** dark, light and high-contrast.
+
+## Where items are installed
+
+| Client | User folders | This repository |
+|---|---|---|
+| GitHub Copilot | skills: `~/.copilot/skills`<br>agents and prompts: `<VS Code User>/prompts`<br>MCP: `<VS Code User>/mcp.json` | `.github/{skills,agents,prompts}`<br>MCP: `.vscode/mcp.json` |
+| Claude Code | `~/.claude/{skills,agents,commands}`, `~/.claude.json` | `.claude/{skills,agents,commands}`, `.mcp.json` |
+| Agent-neutral | `~/.agents/skills` | `.agents/skills` |
+
+MCP servers are never selected by default. They are merged into the existing config file, and a `.bak` copy is written first. A config file that contains comments is left untouched.
+
+## Requirements
+
+- VS Code 1.90 or later
+- `git` on your PATH. For single sign-on, Git Credential Manager (included with Git for Windows).
+
+## Privacy and security
+
+- No telemetry. The extension talks only to the sources you add, through your local `git`.
+- Access tokens are kept in VS Code's secret storage. They are passed to git through the environment, never on a command line or in a log.
+- Installing a package copies files, and optionally MCP server entries, into the folders shown above. MCP servers can run programs or reach the network, so install them only from sources you trust.
+- Settings and install records live in the extension's global storage folder.
+
+## Links
+
+- Source code and issues: https://github.com/DimitarCC/agents-plugin-manager
+- Also available for Visual Studio 2026 (same repository).
+- License: MIT
