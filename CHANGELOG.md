@@ -3,6 +3,14 @@
 All notable changes to Agent Plugin Manager are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.2.1] - 2026-11-13
+
+### Fixed
+- **Lists scrolled one whole card at a time**, which made them jumpy and hard to control. The package list and the item list now scroll smoothly, pixel by pixel.
+
+### Removed
+- The content preview pane below the item list. The list now uses the full height of the details pane. (The VS Code edition keeps its preview.)
+
 ## [1.2.0] - 2026-11-13
 
 ### Added
@@ -51,6 +59,7 @@ First public release.
 - **Theming:** WinUI-style interface that follows the Visual Studio theme (light, dark, blue, high contrast).
 - Extension icon, preview image and Tools menu icon.
 
+[1.2.1]: https://github.com/DimitarCC/agents-plugin-manager/releases/tag/v1.2.1
 [1.2.0]: https://github.com/DimitarCC/agents-plugin-manager/releases/tag/v1.2.0
 [1.1.1]: https://github.com/DimitarCC/agents-plugin-manager/releases/tag/v1.1.1
 [1.1.0]: https://github.com/DimitarCC/agents-plugin-manager/releases/tag/v1.1.0

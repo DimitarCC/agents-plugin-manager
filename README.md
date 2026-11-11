@@ -35,7 +35,7 @@ Authentication for private/enterprise repos:
 - **None**: public repos.
 
 ## Installing
-Pick a package, tick the skills / agents / prompts / MCP servers you want (previews and descriptions are shown),
+Pick a package, tick the skills / agents / prompts / rules / MCP servers you want (descriptions are shown),
 then choose the destination:
 
 | Client | User folders | This repository |

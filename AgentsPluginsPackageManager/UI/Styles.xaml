@@ -321,10 +321,14 @@
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+        <!-- Scroll by pixels instead of by whole items: the cards are tall, so item-by-item scrolling jumps and is hard to control. -->
+        <Setter Property="ScrollViewer.CanContentScroll" Value="False" />
+        <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBox">
-                    <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,2,0">
+                    <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,2,0"
+                                  CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}">
                         <ItemsPresenter />
                     </ScrollViewer>
                 </ControlTemplate>

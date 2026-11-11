@@ -12,7 +12,7 @@ Open it from **Tools > Agent Plugin Manager...**
 - **Private and enterprise repos:**
   - **Single sign-on** through Git Credential Manager (browser sign-in for Entra ID, GitHub Enterprise / SAML SSO, Azure DevOps).
   - **Personal access tokens**, stored encrypted for your Windows account.
-- **See what is inside:** every package lists its skills, agents, prompts, rules and MCP servers with descriptions and a preview of the content. Client folders such as `com.github.copilot/` and `com.anthropic.claude/` are read too, and their items are installed only for that client.
+- **See what is inside:** every package lists its skills, agents, prompts, rules and MCP servers with their descriptions. Client folders such as `com.github.copilot/` and `com.anthropic.claude/` are read too, and their items are installed only for that client.
 - **Install only what you need:** tick individual items, a whole package, or all packages.
 - **Choose where it goes:** user folders (all projects) or the current repository, for GitHub Copilot, Claude Code or an agent-neutral `.agents` layout.
 - **Shared with VS Code:** installs are recorded in a small `plugin-lock.json` at the destination (`~/.agents/` or `<repo>/.agents/`), which the VS Code edition also reads and writes. Each edition sees what the other installed. Commit the repository file to share it with your team.

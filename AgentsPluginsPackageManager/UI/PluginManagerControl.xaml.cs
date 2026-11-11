@@ -376,8 +376,6 @@ namespace AgentsPluginsPackageManager.UI
         private void ShowPackage(PluginPackage? p)
         {
             DetailPanel.Visibility = p == null ? Visibility.Hidden : Visibility.Visible;
-            PreviewBox.Text = "";
-            PreviewTitle.Text = "PREVIEW  —  select an item to see its content";
             if (p == null) { ComponentList.ItemsSource = null; return; }
 
             PkgName.Text = p.Name;
@@ -417,13 +415,6 @@ namespace AgentsPluginsPackageManager.UI
             try { Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true }); }
             catch { }
             e.Handled = true;
-        }
-
-        private void ComponentList_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (!(ComponentList.SelectedItem is PluginComponent c)) return;
-            PreviewTitle.Text = "PREVIEW  —  " + c.Name + "  (" + c.RelativePath + ")";
-            PreviewBox.Text = !string.IsNullOrEmpty(c.Preview) ? c.Preview : c.Description;
         }
 
         private void SelectAll_Click(object sender, RoutedEventArgs e) { if (CurrentPackage != null) CurrentPackage.IsChecked = true; }

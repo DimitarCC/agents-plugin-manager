@@ -126,8 +126,6 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" MinHeight="120" />
-                        <RowDefinition Height="8" />
-                        <RowDefinition Height="0.7*" MinHeight="70" />
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0" Margin="0,0,0,10">
@@ -188,7 +186,7 @@
                         </DockPanel>
                     </StackPanel>
 
-                    <ListBox x:Name="ComponentList" Grid.Row="1" SelectionChanged="ComponentList_SelectionChanged">
+                    <ListBox x:Name="ComponentList" Grid.Row="1">
                         <ListBox.GroupStyle>
                             <GroupStyle>
                                 <GroupStyle.HeaderTemplate>
@@ -239,14 +237,6 @@
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
-
-                    <GridSplitter Grid.Row="2" HorizontalAlignment="Stretch" Background="Transparent" />
-
-                    <DockPanel Grid.Row="3">
-                        <TextBlock x:Name="PreviewTitle" DockPanel.Dock="Top" Style="{StaticResource SectionLabel}" Margin="0,0,0,6" Text="PREVIEW" />
-                        <TextBox x:Name="PreviewBox" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
-                                 FontFamily="Consolas" AcceptsReturn="True" VerticalContentAlignment="Top" />
-                    </DockPanel>
                 </Grid>
             </Border>
         </Grid>
