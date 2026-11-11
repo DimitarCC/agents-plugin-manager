@@ -34,6 +34,11 @@
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.11.1034" />
   </ItemGroup>
 
+  <Target Name="CopyLicenseForVsix" BeforeTargets="BeforeBuild;GetVsixSourceItems;CreateVsixContainer">
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\..\LICENSE" DestinationFiles="$(IntermediateOutputPath)LICENSE.txt" SkipUnchangedFiles="true" />
+  </Target>
+
   <ItemGroup>
     <VSCTCompile Include="AgentsPluginsPackage.vsct">
       <ResourceName>Menus.ctmenu</ResourceName>
@@ -42,7 +47,8 @@
 
   <ItemGroup>
     <None Include="source.extension.vsixmanifest" />
-    <Content Include="..\LICENSE" Link="LICENSE.txt">
+    <!-- The repo keeps a single LICENSE file; it is copied to LICENSE.txt at build time for the VSIX. -->
+    <Content Include="$(IntermediateOutputPath)LICENSE.txt" Link="LICENSE.txt">
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
     <Content Include="Resources\icon.png">

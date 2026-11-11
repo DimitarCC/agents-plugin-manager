@@ -7,8 +7,10 @@ namespace AgentsPluginsPackageManager.Services
 {
     public static class SettingsStore
     {
-        public static string DataRoot { get; } = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AgentsPluginsPackageManager");
+        /// <summary>%LOCALAPPDATA%\AgentsPluginsPackageManager, or the folder in AGENTPLUGINS_DATA_DIR (used by automated tests).</summary>
+        public static string DataRoot { get; } = Environment.GetEnvironmentVariable("AGENTPLUGINS_DATA_DIR") is string d && d.Length > 0
+            ? d
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AgentsPluginsPackageManager");
 
         public static string CacheRoot => Path.Combine(DataRoot, "cache");
         public static string PluginPayloadRoot => Path.Combine(DataRoot, "plugins");
